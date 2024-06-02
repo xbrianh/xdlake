@@ -4,9 +4,11 @@ import fsspec
 from datetime import datetime, timezone
 from uuid import uuid4
 from urllib.parse import urlparse
+from collections import defaultdict
 
 import pyarrow as pa
 import pyarrow.dataset
+import pyarrow.parquet
 
 
 def timestamp(dt: datetime | None = None) -> int:
@@ -137,6 +139,28 @@ def _get_version(url: str) -> int:
     return 0
 
 
+def compile_statistics(md: dict):
+    stats = dict()
+    stats["numRecords"] = md["num_rows"]
+    min_values = defaultdict(dict)
+    max_values = defaultdict(dict)
+    for rg_info in md["row_groups"]:
+        for col_info in rg_info["columns"]:
+            column = col_info["path_in_schema"]
+            if col_info["statistics"]["has_min_max"]:
+                if not min_values.get(column):
+                    min_values[column] = col_info["statistics"]["min"]
+                else:
+                    min_values[column] = min(min_values[column], col_info["statistics"]["min"])
+                if not max_values.get(column):
+                    max_values[column] = col_info["statistics"]["max"]
+                else:
+                    max_values[column] = max(max_values[column], col_info["statistics"]["max"])
+    stats["minValues"] = dict(min_values)
+    stats["maxValues"] = dict(max_values)
+    return stats
+
+
 def write(url: str, df: pa.Table, storage_options: dict | None = None, partition_by: list | None = None) -> dict:
     fs = _get_filesystem(url, storage_options)
     url = url.strip("/")
@@ -149,14 +173,23 @@ def write(url: str, df: pa.Table, storage_options: dict | None = None, partition
     if partition_by is not None:
         write_kwargs["partitioning"] = partition_by
         write_kwargs["partitioning_flavor"] = "hive"
+
+    files = dict()
+
+    def visitor(visited_file):
+        md = pyarrow.parquet.ParquetFile(visited_file.path).metadata
+        files[visited_file.path] = compile_statistics(md.to_dict())
+
     pyarrow.dataset.write_dataset(
         df,
         url,
         format="parquet",
         filesystem=fs,
         basename_template=f"{version}-{uuid4()}-{{i}}.parquet",
+        file_visitor=visitor,
         ** write_kwargs,
     )
+    print(files)
     return
     for p in fs.ls(url):
         if os.path.basename(p).startswith(f"{version}-"):
