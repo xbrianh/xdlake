@@ -15,6 +15,7 @@ def timestamp(dt: datetime | None = None) -> int:
     dt = dt or datetime.now(timezone.utc)
     return int(dt.timestamp() * 1000)
 
+CLIENT_VERSION = "sdlake-0.0.0"
 
 PROTOCOL_ACTION = {"protocol": {"minReaderVersion": 1, "minWriterVersion": 2}}
 
@@ -65,8 +66,19 @@ COMMIT_INFO = {"commitInfo": {
 }
 
 
-def _read_deltalog(url: str):
-    pass
+def _create_table_commit(location: str, timestamp: int, metadata: dict, protocol: dict):
+    info = {
+        "timestamp": timestamp,
+        "operation": "CREATE TABLE",
+        "operationParameters": {
+            "location": location,
+            "protocol": json.dumps(protocol),
+            "mode": "ErrorIfExists",
+            "metadata": json.dumps(metadata),
+        },
+        "clientVersion": CLIENT_VERSION,
+    }
+    return {"commitInfo": info}
 
 
 def _get_filesystem(url: str, storage_options: dict | None = None):
@@ -118,14 +130,14 @@ ADD = {
   }
 }
 
-def _create_add_action(path: str, df: pa.Table):
+def _create_add_action(path: str, timestamp_now: int, stats: dict):
     info = {
         "path": path,
         "partitionValues": {},
         "size": 2414,
-        "modificationTime": 1717277177384,
+        "modificationTime": timestamp_now,
         "dataChange": True,
-        "stats": "{\"numRecords\": 11, \"minValues\": {\"0\": 0.037964144340130956, \"1\": 0.060449978031596574, \"2\": 0.03946171954196798, \"3\": 0.004219535424763832, \"4\": 0.01191401722014973}, \"maxValues\": {\"0\": 0.9719751853295551, \"1\": 0.9989695414962797, \"2\": 0.8319658722321173, \"3\": 0.8745623818957149, \"4\": 0.9832467029023835}, \"nullCount\": {\"0\": 0, \"1\": 0, \"2\": 0, \"3\": 0, \"4\": 0}}",
+        "stats": json.dumps(stats),
         "tags": None,
         "deletionVector": None,
         "baseRowId": None,
@@ -133,10 +145,6 @@ def _create_add_action(path: str, df: pa.Table):
         "clusteringProvider": None
     }
     return {"add": info}
-
-
-def _get_version(url: str) -> int:
-    return 0
 
 
 def compile_statistics(md: dict):
@@ -161,24 +169,46 @@ def compile_statistics(md: dict):
     return stats
 
 
-def write(url: str, df: pa.Table, storage_options: dict | None = None, partition_by: list | None = None) -> dict:
+def read_deltalog(url: str, storage_options: dict | None = None) -> dict[int, dict]:
     fs = _get_filesystem(url, storage_options)
-    url = url.strip("/")
     log_url = os.path.join(url, "_delta_log")
-    schema_info = _schema_info(df)
+    if not fs.exists(log_url):
+        return []
+    filepaths = sorted([file_info["name"] for file_info in fs.ls(log_url, detail=True)
+                        if "file" == file_info["type"]])
+    log_entries = dict()
+    for filepath in filepaths:
+        name = os.path.basename(filepath)
+        version = int(name.split(".")[0])
+        with fs.open(filepath) as fh:
+            for line in fh:
+                log_entries[version] = json.loads(line)
+    return log_entries
 
-    version = _get_version(url)
-    print(df)
+
+def write(url: str, df: pa.Table, storage_options: dict | None = None, partition_by: list | None = None) -> dict:
+    url = url.strip("/")
+    fs = _get_filesystem(url, storage_options)
+    schema_info = _schema_info(df)
+    delta_log = read_deltalog(url, storage_options)
+    if delta_log:
+        version = 1 + max(delta_log.keys())
+    else:
+        version = 0
+
     write_kwargs = dict()
     if partition_by is not None:
         write_kwargs["partitioning"] = partition_by
         write_kwargs["partitioning_flavor"] = "hive"
 
-    files = dict()
+    add_actions = dict()
+    timestamp_now = timestamp()
 
     def visitor(visited_file):
         md = pyarrow.parquet.ParquetFile(visited_file.path).metadata
-        files[visited_file.path] = compile_statistics(md.to_dict())
+        stats = compile_statistics(md.to_dict())
+        path = visited_file.path.split("/", 1)[1]
+        add_actions[visited_file.path] = _create_add_action(path, timestamp_now, stats)
 
     pyarrow.dataset.write_dataset(
         df,
@@ -189,14 +219,17 @@ def write(url: str, df: pa.Table, storage_options: dict | None = None, partition
         file_visitor=visitor,
         ** write_kwargs,
     )
-    print(files)
-    return
-    for p in fs.ls(url):
-        if os.path.basename(p).startswith(f"{version}-"):
-            print(p)
 
     log_actions = list()
-    if not fs.exists(log_url):
+    if not delta_log:
+        table_metadata = _create_metadata(schema_info)
         log_actions.append(PROTOCOL_ACTION)
-        log_actions.append(_create_metadata(schema_info))
-        fs.mkdir(log_url)
+        log_actions.append(table_metadata)
+        log_actions.append(_create_table_commit(url, timestamp_now, table_metadata, PROTOCOL_ACTION))
+        for action in add_actions.values():
+            log_actions.append(action)
+        fs.mkdir(os.path.join(url, "_delta_log"))
+        filepath = os.path.join(url, "_delta_log", f"{version:020}.json")
+        with fs.open(filepath, "w") as fh:
+            entries = [json.dumps(a) for a in log_actions]
+            fh.write(os.linesep.join(entries))
