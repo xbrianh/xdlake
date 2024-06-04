@@ -71,19 +71,26 @@ def _create_table_commit(location: str, timestamp: int, metadata: dict, protocol
         "timestamp": timestamp,
         "operation": "CREATE TABLE",
         "operationParameters": {
-            "location": location,
-            "protocol": json.dumps(protocol),
-            "mode": "ErrorIfExists",
             "metadata": json.dumps(metadata),
+            "protocol": json.dumps(protocol),
+            "location": location,
+            "mode": "ErrorIfExists",
         },
         "clientVersion": CLIENT_VERSION,
     }
     return {"commitInfo": info}
 
 
-def _get_filesystem(url: str, storage_options: dict | None = None):
+def _get_filesystem(url: str, storage_options: dict | None = None) -> tuple:
     parsed = urlparse(url)
-    return fsspec.filesystem(parsed.scheme, **(storage_options or dict()))
+    scheme = parsed.scheme or "file"
+    fs = fsspec.filesystem(scheme, **(storage_options or dict()))
+    if "file" == scheme:
+        filepath = os.path.abspath(parsed.path)
+        url = f"file://{filepath}"
+    else:
+        filepath = None
+    return url, filepath, fs
 
 
 def _schema_info(df: pa.Table) -> dict:
@@ -170,7 +177,7 @@ def compile_statistics(md: dict):
 
 
 def read_deltalog(url: str, storage_options: dict | None = None) -> dict[int, dict]:
-    fs = _get_filesystem(url, storage_options)
+    url, filepath, fs = _get_filesystem(url, storage_options)
     log_url = os.path.join(url, "_delta_log")
     if not fs.exists(log_url):
         return []
@@ -187,8 +194,7 @@ def read_deltalog(url: str, storage_options: dict | None = None) -> dict[int, di
 
 
 def write(url: str, df: pa.Table, storage_options: dict | None = None, partition_by: list | None = None) -> dict:
-    url = url.strip("/")
-    fs = _get_filesystem(url, storage_options)
+    url, filepath, fs = _get_filesystem(url, storage_options)
     schema_info = _schema_info(df)
     delta_log = read_deltalog(url, storage_options)
     if delta_log:
@@ -205,6 +211,9 @@ def write(url: str, df: pa.Table, storage_options: dict | None = None, partition
     timestamp_now = timestamp()
 
     def visitor(visited_file):
+        print(visited_file.path)
+        if partition_by is not None:
+            print(visited_file.path.replace(filepath, ""))
         md = pyarrow.parquet.ParquetFile(visited_file.path).metadata
         stats = compile_statistics(md.to_dict())
         path = visited_file.path.split("/", 1)[1]
@@ -212,7 +221,7 @@ def write(url: str, df: pa.Table, storage_options: dict | None = None, partition
 
     pyarrow.dataset.write_dataset(
         df,
-        url,
+        filepath or url,
         format="parquet",
         filesystem=fs,
         basename_template=f"{version}-{uuid4()}-{{i}}.parquet",
@@ -224,10 +233,14 @@ def write(url: str, df: pa.Table, storage_options: dict | None = None, partition
     if not delta_log:
         table_metadata = _create_metadata(schema_info)
         log_actions.append(PROTOCOL_ACTION)
-        log_actions.append(table_metadata)
-        log_actions.append(_create_table_commit(url, timestamp_now, table_metadata, PROTOCOL_ACTION))
+        log_actions.append({"metaData": table_metadata})
         for action in add_actions.values():
             log_actions.append(action)
+        if "file" == fs.protocol[0]:
+            location = f"file://{os.path.abspath(url)}"
+        else:
+            location = url
+        log_actions.append(_create_table_commit(location, timestamp_now, table_metadata, PROTOCOL_ACTION))
         fs.mkdir(os.path.join(url, "_delta_log"))
         filepath = os.path.join(url, "_delta_log", f"{version:020}.json")
         with fs.open(filepath, "w") as fh:

@@ -25,7 +25,9 @@ class TestXdlake(unittest.TestCase):
 
     def probe(self):
         import deltalake
-        t = deltalake.DeltaTable("testdl")
+        t = deltalake.DeltaTable("tdl")
+        df = t.to_pandas()
+        print(df)
 
 
 if __name__ == '__main__':
