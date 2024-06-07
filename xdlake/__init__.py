@@ -97,7 +97,12 @@ def _schema_info(df: pa.Table) -> dict:
     info = {
         "type": "struct",
         "fields": [
-            {"name": f.name, "type": str(f.type), "nullable": f.nullable, "metadata": f.metadata}
+            {
+                "name": f.name,
+                 "type": str(f.type),
+                 "nullable": f.nullable,
+                 "metadata": f.metadata if f.metadata else {}
+            }
             for f in df.schema
         ]
     }
@@ -159,6 +164,7 @@ def compile_statistics(md: dict):
     stats["numRecords"] = md["num_rows"]
     min_values = defaultdict(dict)
     max_values = defaultdict(dict)
+    nullcounts = defaultdict(int)
     for rg_info in md["row_groups"]:
         for col_info in rg_info["columns"]:
             column = col_info["path_in_schema"]
@@ -171,8 +177,10 @@ def compile_statistics(md: dict):
                     max_values[column] = col_info["statistics"]["max"]
                 else:
                     max_values[column] = max(max_values[column], col_info["statistics"]["max"])
+            nullcounts[column] += col_info["statistics"]["null_count"]
     stats["minValues"] = dict(min_values)
     stats["maxValues"] = dict(max_values)
+    stats["nullCount"] = nullcounts
     return stats
 
 
