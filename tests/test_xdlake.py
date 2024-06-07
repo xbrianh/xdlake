@@ -16,12 +16,14 @@ class TestXdLake(unittest.TestCase):
     def test_foo(self):
         test_dir = "testdl"
         shutil.rmtree(test_dir, ignore_errors=True)
-        t = pyarrow.table(
-            [np.random.random(11) for _ in range(5)],
-            names = ["bob", "sue", "george", "rebecca", "morgain"],
-        )
-        t = t.append_column("cats", [random.choice(cats) for _ in range(len(t))])
-        xdlake.write(test_dir, t, partition_by=["cats"])
+
+        for _ in range(4):
+            t = pyarrow.table(
+                [np.random.random(11) for _ in range(5)],
+                names = ["bob", "sue", "george", "rebecca", "morgain"],
+            )
+            t = t.append_column("cats", [random.choice(cats) for _ in range(len(t))])
+            xdlake.write(test_dir, t, partition_by=["cats"])
 
     def probe(self):
         import deltalake

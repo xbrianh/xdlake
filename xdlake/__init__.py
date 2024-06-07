@@ -35,6 +35,19 @@ def _create_table_commit(location: str, timestamp: int, metadata: dict, protocol
     return {"commitInfo": info}
 
 
+def _write_table_commit(timestamp: int, mode: str, partition_by: list | None = None):
+    info = {
+        "timestamp": timestamp,
+        "operation": "WRITE",
+        "operationParameters": {
+            "partitionBy": partition_by or list(),
+            "mode": mode,
+        },
+        "clientVersion": CLIENT_VERSION,
+    }
+    return {"commitInfo": info}
+
+
 def _get_filesystem(url: str, storage_options: dict | None = None) -> tuple:
     parsed = urlparse(url)
     scheme = parsed.scheme or "file"
@@ -174,6 +187,7 @@ def write(url: str, df: pa.Table, storage_options: dict | None = None, partition
         filesystem=fs,
         basename_template=f"{version}-{uuid4()}-{{i}}.parquet",
         file_visitor=visitor,
+        existing_data_behavior="overwrite_or_ignore",
         ** write_kwargs,
     )
 
@@ -190,7 +204,11 @@ def write(url: str, df: pa.Table, storage_options: dict | None = None, partition
             location = url
         log_actions.append(_create_table_commit(location, timestamp_now, table_metadata, PROTOCOL_ACTION))
         fs.mkdir(os.path.join(filepath, "_delta_log"))
-        filepath = os.path.join(filepath, "_delta_log", f"{version:020}.json")
-        with fs.open(filepath, "w") as fh:
-            entries = [json.dumps(a) for a in log_actions]
-            fh.write(os.linesep.join(entries))
+    else:
+        for action in add_actions.values():
+            log_actions.append(action)
+        log_actions.append(_write_table_commit(timestamp_now, mode="Append", partition_by=partition_by))
+    filepath = os.path.join(filepath, "_delta_log", f"{version:020}.json")
+    with fs.open(filepath, "w") as fh:
+        entries = [json.dumps(a) for a in log_actions]
+        fh.write(os.linesep.join(entries))
