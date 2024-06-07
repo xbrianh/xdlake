@@ -1,11 +1,10 @@
-import os
 import shutil
 import random
 import unittest
 
 import numpy as np
-import pandas as pd
 import pyarrow
+import deltalake
 
 import xdlake
 
@@ -25,11 +24,11 @@ class TestXdLake(unittest.TestCase):
             t = t.append_column("cats", [random.choice(cats) for _ in range(len(t))])
             xdlake.write(test_dir, t, partition_by=["cats"])
 
-    def probe(self):
-        import deltalake
         t = deltalake.DeltaTable("testdl")
-        df = t.to_pandas()
-        print(df)
+        t.to_pandas()
+
+    def probe(self):
+        pass
 
 
 if __name__ == '__main__':
