@@ -19,52 +19,6 @@ CLIENT_VERSION = "sdlake-0.0.0"
 
 PROTOCOL_ACTION = {"protocol": {"minReaderVersion": 1, "minWriterVersion": 2}}
 
-METADATA = {
-  "metaData": {
-    "id": "988aef4e-183e-463e-8b83-3bec352729d2",
-    "name": None,
-    "description": None,
-    "format": {
-      "provider": "parquet",
-      "options": {}
-    },
-    "schemaString": "{\"type\":\"struct\",\"fields\":[{\"name\":\"0\",\"type\":\"double\",\"nullable\":True,\"metadata\":{}},{\"name\":\"1\",\"type\":\"double\",\"nullable\":True,\"metadata\":{}},{\"name\":\"2\",\"type\":\"double\",\"nullable\":True,\"metadata\":{}},{\"name\":\"3\",\"type\":\"double\",\"nullable\":True,\"metadata\":{}},{\"name\":\"4\",\"type\":\"double\",\"nullable\":True,\"metadata\":{}}]}",
-    "partitionColumns": [],
-    "createdTime": 1717277177384,
-    "configuration": {}
-  }
-}
-
-ADD = {
-  "add": {
-    "path": "0-62b0f8cb-6991-4f13-86c1-0530822e9378-0.parquet",
-    "partitionValues": {},
-    "size": 2414,
-    "modificationTime": 1717277177384,
-    "dataChange": True,
-    "stats": "{\"numRecords\": 11, \"minValues\": {\"0\": 0.037964144340130956, \"1\": 0.060449978031596574, \"2\": 0.03946171954196798, \"3\": 0.004219535424763832, \"4\": 0.01191401722014973}, \"maxValues\": {\"0\": 0.9719751853295551, \"1\": 0.9989695414962797, \"2\": 0.8319658722321173, \"3\": 0.8745623818957149, \"4\": 0.9832467029023835}, \"nullCount\": {\"0\": 0, \"1\": 0, \"2\": 0, \"3\": 0, \"4\": 0}}",
-    "tags": None,
-    "deletionVector": None,
-    "baseRowId": None,
-    "defaultRowCommitVersion": None,
-    "clusteringProvider": None
-  }
-}
-
-
-COMMIT_INFO = {"commitInfo": {
-    "timestamp": 1717277177384,
-    "operation": "CREATE TABLE",
-    "operationParameters": {
-      "location": "file:///workspace/xdlake/tdl",
-      "protocol": "{\"minReaderVersion\":1,\"minWriterVersion\":2}",
-      "mode": "ErrorIfExists",
-      "metadata": "{\"configuration\":{},\"createdTime\":1717277177384,\"description\":null,\"format\":{\"options\":{},\"provider\":\"parquet\"},\"id\":\"988aef4e-183e-463e-8b83-3bec352729d2\",\"name\":None,\"partitionColumns\":[],\"schemaString\":\"{\\\"type\\\":\\\"struct\\\",\\\"fields\\\":[{\\\"name\\\":\\\"0\\\",\\\"type\\\":\\\"double\\\",\\\"nullable\\\":true,\\\"metadata\\\":{}},{\\\"name\\\":\\\"1\\\",\\\"type\\\":\\\"double\\\",\\\"nullable\\\":true,\\\"metadata\\\":{}},{\\\"name\\\":\\\"2\\\",\\\"type\\\":\\\"double\\\",\\\"nullable\\\":true,\\\"metadata\\\":{}},{\\\"name\\\":\\\"3\\\",\\\"type\\\":\\\"double\\\",\\\"nullable\\\":true,\\\"metadata\\\":{}},{\\\"name\\\":\\\"4\\\",\\\"type\\\":\\\"double\\\",\\\"nullable\\\":true,\\\"metadata\\\":{}}]}\"}"
-    },
-    "clientVersion": "delta-rs.0.17.3"
-  }
-}
-
 
 def _create_table_commit(location: str, timestamp: int, metadata: dict, protocol: dict):
     info = {
@@ -109,7 +63,7 @@ def _schema_info(df: pa.Table) -> dict:
     return info
 
 
-def _create_metadata(schema_info: dict):
+def _create_metadata(schema_info: dict, partition_by: list | None = None):
     md = {
         "id": f"{uuid4()}",
         "name": None,
@@ -119,33 +73,17 @@ def _create_metadata(schema_info: dict):
           "options": {}
         },
         "schemaString": json.dumps(schema_info),
-        "partitionColumns": [],
+        "partitionColumns": partition_by or [],
         "createdTime": timestamp(),
         "configuration": {},
     }
     return md
 
 
-ADD = {
-  "add": {
-    "path": "0-62b0f8cb-6991-4f13-86c1-0530822e9378-0.parquet",
-    "partitionValues": {},
-    "size": 2414,
-    "modificationTime": 1717277177384,
-    "dataChange": True,
-    "stats": "{\"numRecords\": 11, \"minValues\": {\"0\": 0.037964144340130956, \"1\": 0.060449978031596574, \"2\": 0.03946171954196798, \"3\": 0.004219535424763832, \"4\": 0.01191401722014973}, \"maxValues\": {\"0\": 0.9719751853295551, \"1\": 0.9989695414962797, \"2\": 0.8319658722321173, \"3\": 0.8745623818957149, \"4\": 0.9832467029023835}, \"nullCount\": {\"0\": 0, \"1\": 0, \"2\": 0, \"3\": 0, \"4\": 0}}",
-    "tags": None,
-    "deletionVector": None,
-    "baseRowId": None,
-    "defaultRowCommitVersion": None,
-    "clusteringProvider": None
-  }
-}
-
-def _create_add_action(path: str, timestamp_now: int, size: int, stats: dict):
+def _create_add_action(path: str, timestamp_now: int, size: int, stats: dict, partition_values: dict | None = None):
     info = {
         "path": path,
-        "partitionValues": {},
+        "partitionValues": partition_values or dict(),
         "size": size,
         "modificationTime": timestamp_now,
         "dataChange": True,
@@ -222,7 +160,12 @@ def write(url: str, df: pa.Table, storage_options: dict | None = None, partition
         md = pyarrow.parquet.ParquetFile(visited_file.path).metadata
         stats = compile_statistics(md.to_dict())
         path = os.path.relpath(visited_file.path, filepath)
-        add_actions[visited_file.path] = _create_add_action(path, timestamp_now, fs.size(visited_file.path), stats)
+        partition_values = dict()
+        for part in path.split("/"):
+            if "=" in part:
+                key, value = part.split("=")
+                partition_values[key] = value
+        add_actions[visited_file.path] = _create_add_action(path, timestamp_now, fs.size(visited_file.path), stats, partition_values=partition_values)
 
     pyarrow.dataset.write_dataset(
         df,
@@ -236,7 +179,7 @@ def write(url: str, df: pa.Table, storage_options: dict | None = None, partition
 
     log_actions = list()
     if not delta_log:
-        table_metadata = _create_metadata(schema_info)
+        table_metadata = _create_metadata(schema_info, partition_by)
         log_actions.append(PROTOCOL_ACTION)
         log_actions.append({"metaData": table_metadata})
         for action in add_actions.values():

@@ -1,3 +1,4 @@
 pandas
 deltalake
+ruff-lsp
 -r requirements.txt
