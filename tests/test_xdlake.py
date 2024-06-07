@@ -12,7 +12,7 @@ import xdlake
 
 cats = ["S", "A", "D"]
 
-class TestXdlake(unittest.TestCase):
+class TestXdLake(unittest.TestCase):
     def test_foo(self):
         test_dir = "testdl"
         shutil.rmtree(test_dir, ignore_errors=True)
@@ -25,7 +25,7 @@ class TestXdlake(unittest.TestCase):
 
     def probe(self):
         import deltalake
-        t = deltalake.DeltaTable("tdl")
+        t = deltalake.DeltaTable("testdl")
         df = t.to_pandas()
         print(df)
 

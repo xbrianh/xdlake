@@ -142,11 +142,11 @@ ADD = {
   }
 }
 
-def _create_add_action(path: str, timestamp_now: int, stats: dict):
+def _create_add_action(path: str, timestamp_now: int, size: int, stats: dict):
     info = {
         "path": path,
         "partitionValues": {},
-        "size": 2414,
+        "size": size,
         "modificationTime": timestamp_now,
         "dataChange": True,
         "stats": json.dumps(stats),
@@ -219,13 +219,10 @@ def write(url: str, df: pa.Table, storage_options: dict | None = None, partition
     timestamp_now = timestamp()
 
     def visitor(visited_file):
-        print(visited_file.path)
-        if partition_by is not None:
-            print(visited_file.path.replace(filepath, ""))
         md = pyarrow.parquet.ParquetFile(visited_file.path).metadata
         stats = compile_statistics(md.to_dict())
-        path = visited_file.path.split("/", 1)[1]
-        add_actions[visited_file.path] = _create_add_action(path, timestamp_now, stats)
+        path = os.path.relpath(visited_file.path, filepath)
+        add_actions[visited_file.path] = _create_add_action(path, timestamp_now, fs.size(visited_file.path), stats)
 
     pyarrow.dataset.write_dataset(
         df,
@@ -245,12 +242,12 @@ def write(url: str, df: pa.Table, storage_options: dict | None = None, partition
         for action in add_actions.values():
             log_actions.append(action)
         if "file" == fs.protocol[0]:
-            location = f"file://{os.path.abspath(url)}"
+            location = f"file://{filepath}"
         else:
             location = url
         log_actions.append(_create_table_commit(location, timestamp_now, table_metadata, PROTOCOL_ACTION))
-        fs.mkdir(os.path.join(url, "_delta_log"))
-        filepath = os.path.join(url, "_delta_log", f"{version:020}.json")
+        fs.mkdir(os.path.join(filepath, "_delta_log"))
+        filepath = os.path.join(filepath, "_delta_log", f"{version:020}.json")
         with fs.open(filepath, "w") as fh:
             entries = [json.dumps(a) for a in log_actions]
             fh.write(os.linesep.join(entries))
