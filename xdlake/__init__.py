@@ -116,14 +116,10 @@ def write(url: str, df: pa.Table, storage_options: dict | None = None, partition
         dlog.actions.append(protocol)
         dlog.actions.append(table_metadata)
         dlog.actions.extend(add_actions)
-        if "file" == loc.fs.protocol[0]:
-            location = f"file://{loc.filepath}"
-        else:
-            location = url
-        dlog.actions.append(delta_log.TableCommitCreate.with_parms(location, utils.timestamp(), table_metadata, protocol))
+        dlog.actions.append(delta_log.TableCommitCreate.with_parms(loc.location(), utils.timestamp(), table_metadata, protocol))
         loc.fs.mkdir(os.path.join(loc.filepath, "_delta_log"))
     else:
         dlog.actions.extend(add_actions)
         dlog.actions.append(delta_log.TableCommitWrite.with_parms(utils.timestamp(), mode="Append", partition_by=partition_by))
-    with loc.fs.open(os.path.join(loc.filepath, "_delta_log", f"{version:020}.json"), "w") as fh:
+    with loc.fs.open("/".join([loc.filepath, "_delta_log", f"{version:020}.json"]), "w") as fh:
         dlog.write(fh)

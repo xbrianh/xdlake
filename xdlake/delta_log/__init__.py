@@ -183,9 +183,6 @@ class DeltaLog:
             case _:
                 raise Exception(f"Cannot handle delta log action '{action}'")
 
-    def append(self, action):
-        self.actions.append(action)
-
     def write(self, handle):
         actions = list()
         for a in self.actions:
