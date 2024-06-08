@@ -16,6 +16,7 @@ class Type(Enum):
     metaData = "metaData"
     protocol = "protocol"
     add = "add"
+    remove = "remove"
 
 def delta_log_entry(obj):
     obj = dataclass(obj)
@@ -147,12 +148,21 @@ class Add:
     size: int
     modificationTime: int
     stats: str
-    dataChange: str | None = None
+    dataChange: bool | None = None
     tags: list | None = None
     deletionVector: dict | None = None
     baseRowId: str | None = None
     defaultRowCommitVersion: int | None = None
     clusteringProvider: str | None = None
+
+@delta_log_entry
+class Remove:
+    path: str
+    dataChange: bool
+    deletionTimestamp: int
+    extendedFileMetadata: bool
+    partitionValues: dict
+    size: int
 
 class DeltaLog:
     def __init__(self, handle = None):
@@ -180,6 +190,8 @@ class DeltaLog:
                 return Protocol(**info)
             case Type.add:
                 return Add(**info)
+            case Type.remove:
+                return Remove(**info)
             case _:
                 raise Exception(f"Cannot handle delta log action '{action}'")
 
@@ -198,8 +210,14 @@ class DeltaLog:
                     actions.append({Type.protocol.name: info})
                 case Add():
                     actions.append({Type.add.name: info})
+                case Remove():
+                    actions.append({Type.remove.name: info})
         handle.write("\n".join([json.dumps(a) for a in actions]))
 
     def add_actions(self) -> list[Add]:
         return [a for a in self.actions
                 if isinstance(a, Add)]
+
+    def remove_actions(self) -> list[Remove]:
+        return [a for a in self.actions
+                if isinstance(a, Remove)]

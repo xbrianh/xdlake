@@ -139,14 +139,18 @@ class DeltaTable:
         self.loc = StorageLocation(url)
         self._log_info = read_deltalog(self.loc, **(storage_options or dict()))
 
-    def to_pyarow_dataset(self):
-        adds = list()
+    def to_pyarrow_dataset(self):
+        adds = dict()
 
         for version, dl in self._log_info.items():
-            adds.extend(dl.add_actions())
+            for add in dl.add_actions():
+                adds[add.path] = add
 
-        paths = [self.loc.append_path(a.path)
-                 for a in adds]
+            for remove in dl.remove_actions():
+                del adds[remove.path]
+
+        paths = [self.loc.append_path(path)
+                 for path in adds]
 
         return pyarrow.dataset.dataset(
             paths,
