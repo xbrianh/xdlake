@@ -1,8 +1,8 @@
 import os
-import fsspec
 from uuid import uuid4
 from urllib.parse import urlparse
 
+import fsspec
 import pyarrow as pa
 import pyarrow.dataset
 import pyarrow.parquet
@@ -17,14 +17,14 @@ class StorageLocation:
         self.fs = fsspec.filesystem(self.scheme, **storage_options)
 
         if "file" == self.scheme:
-            self.bucket = None
-            path = parsed.path.strip(os.path.sep)
-            self.path = os.path.abspath(os.path.join(parsed.netloc, path))
+            if parsed.path.startswith(os.path.sep):
+                self.path = parsed.path
+            else:
+                self.path = os.path.abspath(parsed.path)
         else:
-            self.bucket = parsed.netloc
-            self.path = parsed.path
+            self.path = url
 
-    def join(self, *path_components) -> str:
+    def append_path(self, *path_components) -> str:
         if "file" == self.scheme:
             p = os.path.join(self.path, *path_components)
         else:
@@ -33,14 +33,25 @@ class StorageLocation:
 
     @property
     def url(self, *path_components):
-        p = self.join(*path_components)
+        p = self.append_path(*path_components)
         if "file" == self.scheme:
             return f"{self.scheme}://{p}"
         else:
-            return f"{self.scheme}://{self.bucket}{p}"
+            return p
+
+    def open(self, path: str, mode: str="r") -> fsspec.core.OpenFile:
+        p = self.append_path(path)
+        if "file" == self.scheme:
+            folder = os.path.dirname(p)
+            if self.fs.exists(folder):
+                if not self.fs.isdir(folder):
+                    raise FileExistsError()
+            else:
+                self.fs.mkdir(folder)
+        return self.fs.open(p, mode)
 
 def read_deltalog(loc: StorageLocation, storage_options: dict | None = None) -> dict[int, dict]:
-    log_url = loc.join("_delta_log")
+    log_url = loc.append_path("_delta_log")
     if not loc.fs.exists(log_url):
         return []
     filepaths = sorted([file_info["name"] for file_info in loc.fs.ls(log_url, detail=True)

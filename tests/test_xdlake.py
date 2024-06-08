@@ -1,6 +1,8 @@
+import os
 import shutil
 import random
 import unittest
+from uuid import uuid4
 
 import numpy as np
 import pyarrow
@@ -28,12 +30,22 @@ class TestXdLake(unittest.TestCase):
         t.to_pandas()
 
     def test_storage(self):
-        for url in ["file://foo/bar/baz", "s3://foo/bar/baz"]:
-            s = xdlake.StorageLocation(url)
-            print(s.bucket)
-            print(s.path)
-            print(s.url)
-            print()
+        name = f"{uuid4()}"
+        tests = [
+            ("/tmp/tests", f"/tmp/tests/foo/{name}"),
+            ("tmp/tests", f"{os.getcwd()}/tmp/tests/foo/{name}"),
+            ("file:///tmp/tests", f"/tmp/tests/foo/{name}"),
+            ("s3://test-xdlake/tests", f"s3://test-xdlake/tests/foo/{name}"), 
+        ]
+        for url, expected_path in tests:
+            loc = xdlake.StorageLocation(url)
+            p = loc.append_path("foo", name)
+            self.assertEqual(p, expected_path)
+            d = os.urandom(8)
+            with loc.open(p, mode="wb") as fh:
+                fh.write(d)
+            with loc.open(p, mode="rb") as fh:
+                self.assertEqual(fh.read(), d)
 
     def write_deltalake(self):
         test_dir = "tdl"
