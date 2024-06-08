@@ -15,8 +15,7 @@ cats = ["S", "A", "D"]
 
 class TestXdLake(unittest.TestCase):
     def test_xdlake(self):
-        test_dir = "testdl"
-        shutil.rmtree(test_dir, ignore_errors=True)
+        test_dir = f"testdl/{uuid4()}"
 
         for _ in range(4):
             t = pyarrow.table(
@@ -26,8 +25,22 @@ class TestXdLake(unittest.TestCase):
             t = t.append_column("cats", [random.choice(cats) for _ in range(len(t))])
             xdlake.write(test_dir, t, partition_by=["cats"])
 
-        t = deltalake.DeltaTable("testdl")
+        t = deltalake.DeltaTable(test_dir)
         t.to_pandas()
+
+    def test_xdlake_s3(self):
+        test_dir = f"s3://test-xdlake/tests/{uuid4()}"
+
+        for _ in range(4):
+            t = pyarrow.table(
+                [np.random.random(11) for _ in range(5)],
+                names = ["bob", "sue", "george", "rebecca", "morgain"],
+            )
+            t = t.append_column("cats", [random.choice(cats) for _ in range(len(t))])
+            xdlake.write(test_dir, t, partition_by=["cats"])
+
+        # t = deltalake.DeltaTable("testdl")
+        # t.to_pandas()
 
     def test_storage(self):
         name = f"{uuid4()}"

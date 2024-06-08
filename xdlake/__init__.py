@@ -39,13 +39,12 @@ class StorageLocation:
         else:
             return p
 
-    def open(self, path: str, mode: str="r") -> fsspec.core.OpenFile:
-        p = self.append_path(path)
-        if "file" == self.scheme:
+    def open(self, p: str, mode: str="r") -> fsspec.core.OpenFile:
+        if "file" == self.scheme and "w" in mode:
             folder = os.path.dirname(p)
             if self.fs.exists(folder):
                 if not self.fs.isdir(folder):
-                    raise FileExistsError()
+                    raise FileExistsError(p)
             else:
                 self.fs.mkdir(folder)
         return self.fs.open(p, mode)
@@ -59,7 +58,7 @@ def read_deltalog(loc: StorageLocation, storage_options: dict | None = None) -> 
     log_entries = dict()
     for filepath in filepaths:
         version = int(os.path.basename(filepath).split(".")[0])
-        with loc.fs.open(filepath) as fh:
+        with loc.open(filepath) as fh:
             log_entries[version] = delta_log.DeltaLog(fh)
     return log_entries
 
@@ -131,5 +130,5 @@ def write(url: str, df: pa.Table, storage_options: dict | None = None, partition
     else:
         dlog.actions.extend(add_actions)
         dlog.actions.append(delta_log.TableCommitWrite.with_parms(utils.timestamp(), mode="Append", partition_by=partition_by))
-    with loc.fs.open("/".join([loc.path, "_delta_log", f"{version:020}.json"]), "w") as fh:
+    with loc.open(loc.append_path("_delta_log", f"{version:020}.json"), "w") as fh:
         dlog.write(fh)
