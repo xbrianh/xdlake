@@ -132,3 +132,24 @@ def write(url: str, df: pa.Table, storage_options: dict | None = None, partition
         dlog.actions.append(delta_log.TableCommitWrite.with_parms(utils.timestamp(), mode="Append", partition_by=partition_by))
     with loc.open(loc.append_path("_delta_log", f"{version:020}.json"), "w") as fh:
         dlog.write(fh)
+
+
+class DeltaTable:
+    def __init__(self, url: str, storage_options: dict | None = None):
+        self.loc = StorageLocation(url)
+        self._log_info = read_deltalog(self.loc, **(storage_options or dict()))
+
+    def to_pyarow_dataset(self):
+        adds = list()
+
+        for version, dl in self._log_info.items():
+            adds.extend(dl.add_actions())
+
+        paths = [self.loc.append_path(a.path)
+                 for a in adds]
+
+        return pyarrow.dataset.dataset(
+            paths,
+            format="parquet",
+            partitioning="hive",
+        )

@@ -12,6 +12,7 @@ import xdlake
 
 
 cats = ["S", "A", "D"]
+bats = ["1", "2", "3"]
 
 class TestXdLake(unittest.TestCase):
     def test_xdlake(self):
@@ -23,10 +24,15 @@ class TestXdLake(unittest.TestCase):
                 names = ["bob", "sue", "george", "rebecca", "morgain"],
             )
             t = t.append_column("cats", [random.choice(cats) for _ in range(len(t))])
-            xdlake.write(test_dir, t, partition_by=["cats"])
+            t = t.append_column("bats", [random.choice(bats) for _ in range(len(t))])
+            xdlake.write(test_dir, t, partition_by=["cats", "bats"])
 
         t = deltalake.DeltaTable(test_dir)
         t.to_pandas()
+
+        dt = xdlake.DeltaTable(test_dir)
+        df = dt.to_pyarow_dataset().to_table().to_pandas()
+        print(df)
 
     def test_xdlake_s3(self):
         test_dir = f"s3://test-xdlake/tests/{uuid4()}"

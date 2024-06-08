@@ -199,3 +199,7 @@ class DeltaLog:
                 case Add():
                     actions.append({Type.add.name: info})
         handle.write("\n".join([json.dumps(a) for a in actions]))
+
+    def add_actions(self) -> list[Add]:
+        return [a for a in self.actions
+                if isinstance(a, Add)]
