@@ -10,50 +10,49 @@ import pyarrow.parquet
 from xdlake import delta_log, utils
 
 
-def _get_filesystem(url: str, storage_options: dict | None = None) -> tuple:
-    parsed = urlparse(url)
-    scheme = parsed.scheme or "file"
-    fs = fsspec.filesystem(scheme, **(storage_options or dict()))
-    if "file" == scheme:
-        filepath = os.path.abspath(parsed.path)
-        url = f"file://{filepath}"
-    else:
-        filepath = None
-    return url, filepath, fs
+class StorageLocation:
+    def __init__(self, url: str, **storage_options):
+        parsed = urlparse(url)
+        self.scheme = parsed.scheme or "file"
+        self.fs = fsspec.filesystem(self.scheme, **storage_options)
 
-def read_deltalog(url: str, storage_options: dict | None = None) -> dict[int, dict]:
-    url, filepath, fs = _get_filesystem(url, storage_options)
-    log_url = os.path.join(url, "_delta_log")
-    if not fs.exists(log_url):
+        if "file" == self.scheme:
+            self.bucket = None
+            path = parsed.path.strip(os.path.sep)
+            self.path = os.path.abspath(os.path.join(parsed.netloc, path))
+        else:
+            self.bucket = parsed.netloc
+            self.path = parsed.path
+
+    def join(self, *path_components) -> str:
+        if "file" == self.scheme:
+            p = os.path.join(self.path, *path_components)
+        else:
+            p = "/".join([self.path, *path_components])
+        return p
+
+    @property
+    def url(self, *path_components):
+        p = self.join(*path_components)
+        if "file" == self.scheme:
+            return f"{self.scheme}://{p}"
+        else:
+            return f"{self.scheme}://{self.bucket}{p}"
+
+def read_deltalog(loc: StorageLocation, storage_options: dict | None = None) -> dict[int, dict]:
+    log_url = loc.join("_delta_log")
+    if not loc.fs.exists(log_url):
         return []
-    filepaths = sorted([file_info["name"] for file_info in fs.ls(log_url, detail=True)
+    filepaths = sorted([file_info["name"] for file_info in loc.fs.ls(log_url, detail=True)
                         if "file" == file_info["type"]])
     log_entries = dict()
     for filepath in filepaths:
         version = int(os.path.basename(filepath).split(".")[0])
-        with fs.open(filepath) as fh:
+        with loc.fs.open(filepath) as fh:
             log_entries[version] = delta_log.DeltaLog(fh)
     return log_entries
 
-class _Location:
-    def __init__(self, url: str, storage_options: dict | None = None):
-        parsed = urlparse(url)
-        self.scheme = parsed.scheme or "file"
-        self.fs = fsspec.filesystem(self.scheme, **(storage_options or dict()))
-        if "file" == self.scheme:
-            self.filepath = os.path.abspath(parsed.path)
-            self.url = f"file://{self.filepath}"
-        else:
-            self.filepath = None
-            self.url = url
-
-    def location(self) -> str:
-        if "file" == self.fs.protocol[0]:
-            return f"file://{self.filepath}"
-        else:
-            return self.url
-
-def _write_table(table: pa.Table, loc: _Location, version: int, **write_kwargs):
+def _write_table(table: pa.Table, loc: StorageLocation, version: int, **write_kwargs):
     add_actions = list()
 
     def visitor(visited_file):
@@ -61,7 +60,7 @@ def _write_table(table: pa.Table, loc: _Location, version: int, **write_kwargs):
             pyarrow.parquet.ParquetFile(visited_file.path).metadata
         )
 
-        relpath = visited_file.path.replace(loc.filepath, "").strip("/")
+        relpath = visited_file.path.replace(loc.path, "").strip("/")
         partition_values = dict()
 
         for part in relpath.split("/"):
@@ -81,7 +80,7 @@ def _write_table(table: pa.Table, loc: _Location, version: int, **write_kwargs):
 
     pyarrow.dataset.write_dataset(
         table,
-        loc.filepath or loc.url,
+        loc.path,
         format="parquet",
         filesystem=loc.fs,
         basename_template=f"{version}-{uuid4()}-{{i}}.parquet",
@@ -93,10 +92,10 @@ def _write_table(table: pa.Table, loc: _Location, version: int, **write_kwargs):
     return add_actions
 
 def write(url: str, df: pa.Table, storage_options: dict | None = None, partition_by: list | None = None) -> dict:
-    loc = _Location(url, storage_options)
+    loc = StorageLocation(url, **(storage_options or dict()))
     schema_info = delta_log.Schema.from_pyarrow_table(df)
 
-    log_info = read_deltalog(url, storage_options)
+    log_info = read_deltalog(loc, storage_options)
     if log_info:
         version = 1 + max(log_info.keys())
     else:
@@ -116,10 +115,10 @@ def write(url: str, df: pa.Table, storage_options: dict | None = None, partition
         dlog.actions.append(protocol)
         dlog.actions.append(table_metadata)
         dlog.actions.extend(add_actions)
-        dlog.actions.append(delta_log.TableCommitCreate.with_parms(loc.location(), utils.timestamp(), table_metadata, protocol))
-        loc.fs.mkdir(os.path.join(loc.filepath, "_delta_log"))
+        dlog.actions.append(delta_log.TableCommitCreate.with_parms(loc.path, utils.timestamp(), table_metadata, protocol))
+        loc.fs.mkdir(os.path.join(loc.path, "_delta_log"))
     else:
         dlog.actions.extend(add_actions)
         dlog.actions.append(delta_log.TableCommitWrite.with_parms(utils.timestamp(), mode="Append", partition_by=partition_by))
-    with loc.fs.open("/".join([loc.filepath, "_delta_log", f"{version:020}.json"]), "w") as fh:
+    with loc.fs.open("/".join([loc.path, "_delta_log", f"{version:020}.json"]), "w") as fh:
         dlog.write(fh)
