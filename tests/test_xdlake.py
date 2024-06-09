@@ -12,7 +12,6 @@ from pandas.testing import assert_frame_equal
 import xdlake
 
 
-
 def random_pyarrow_table() -> pyarrow.Table:
     cats = ["S", "A", "D"]
     bats = ["1", "2", "3"]

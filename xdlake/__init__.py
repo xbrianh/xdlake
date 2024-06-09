@@ -49,18 +49,45 @@ class StorageLocation:
                 self.fs.mkdir(folder)
         return self.fs.open(p, mode)
 
-def read_deltalog(loc: StorageLocation, storage_options: dict | None = None) -> dict[int, dict]:
-    log_url = loc.append_path("_delta_log")
-    if not loc.fs.exists(log_url):
-        return []
-    filepaths = sorted([file_info["name"] for file_info in loc.fs.ls(log_url, detail=True)
-                        if "file" == file_info["type"]])
-    log_entries = dict()
-    for filepath in filepaths:
-        version = int(os.path.basename(filepath).split(".")[0])
-        with loc.open(filepath) as fh:
-            log_entries[version] = delta_log.DeltaLog(fh)
-    return log_entries
+
+class DeltaTable:
+    def __init__(self, url: str, storage_options: dict | None = None):
+        self.loc = StorageLocation(url)
+        self.log = self.read_deltalog()
+        self.adds = dict()
+        for version, dl in self.log.items():
+            for add in dl.add_actions():
+                self.adds[add.path] = add
+            for remove in dl.remove_actions():
+                del self.adds[remove.path]
+
+    @property
+    def version(self) -> int:
+        if not self.log:
+            return -1
+        return max(self.log.keys())
+
+    def read_deltalog(self) -> dict[int, dict]:
+        log_url = self.loc.append_path("_delta_log")
+        if not self.loc.fs.exists(log_url):
+            return {}
+        filepaths = sorted([file_info["name"] for file_info in self.loc.fs.ls(log_url, detail=True)
+                            if "file" == file_info["type"]])
+        log_entries = dict()
+        for filepath in filepaths:
+            version = int(os.path.basename(filepath).split(".")[0])
+            with self.loc.open(filepath) as fh:
+                log_entries[version] = delta_log.DeltaLog(fh)
+        return log_entries
+
+    def to_pyarrow_dataset(self):
+        paths = [self.loc.append_path(path) for path in self.adds]
+        return pyarrow.dataset.dataset(
+            paths,
+            format="parquet",
+            partitioning="hive",
+        )
+
 
 def _write_table(table: pa.Table, loc: StorageLocation, version: int, **write_kwargs):
     add_actions = list()
@@ -102,58 +129,27 @@ def _write_table(table: pa.Table, loc: StorageLocation, version: int, **write_kw
     return add_actions
 
 def write(url: str, df: pa.Table, storage_options: dict | None = None, partition_by: list | None = None) -> dict:
-    loc = StorageLocation(url, **(storage_options or dict()))
     schema_info = delta_log.Schema.from_pyarrow_table(df)
-
-    log_info = read_deltalog(loc, storage_options)
-    if log_info:
-        version = 1 + max(log_info.keys())
-    else:
-        version = 0
+    dt = DeltaTable(url, **(storage_options or dict()))
 
     write_kwargs = dict()
     if partition_by is not None:
         write_kwargs["partitioning"] = partition_by
         write_kwargs["partitioning_flavor"] = "hive"
 
-    add_actions = _write_table(df, loc, version, **write_kwargs)
+    new_add_actions = _write_table(df, dt.loc, dt.version, **write_kwargs)
 
     dlog = delta_log.DeltaLog()
-    if not log_info:
+    if -1 == dt.version:
         protocol = delta_log.Protocol()
         table_metadata = delta_log.TableMetadata(schemaString=schema_info.json(), partitionColumns=partition_by)
         dlog.actions.append(protocol)
         dlog.actions.append(table_metadata)
-        dlog.actions.extend(add_actions)
-        dlog.actions.append(delta_log.TableCommitCreate.with_parms(loc.path, utils.timestamp(), table_metadata, protocol))
-        loc.fs.mkdir(os.path.join(loc.path, "_delta_log"))
+        dlog.actions.extend(new_add_actions)
+        dlog.actions.append(delta_log.TableCommitCreate.with_parms(dt.loc.path, utils.timestamp(), table_metadata, protocol))
+        dt.loc.fs.mkdir(os.path.join(dt.loc.path, "_delta_log"))
     else:
-        dlog.actions.extend(add_actions)
+        dlog.actions.extend(new_add_actions)
         dlog.actions.append(delta_log.TableCommitWrite.with_parms(utils.timestamp(), mode="Append", partition_by=partition_by))
-    with loc.open(loc.append_path("_delta_log", f"{version:020}.json"), "w") as fh:
+    with dt.loc.open(dt.loc.append_path("_delta_log", f"{1 + dt.version:020}.json"), "w") as fh:
         dlog.write(fh)
-
-
-class DeltaTable:
-    def __init__(self, url: str, storage_options: dict | None = None):
-        self.loc = StorageLocation(url)
-        self._log_info = read_deltalog(self.loc, **(storage_options or dict()))
-
-    def to_pyarrow_dataset(self):
-        adds = dict()
-
-        for version, dl in self._log_info.items():
-            for add in dl.add_actions():
-                adds[add.path] = add
-
-            for remove in dl.remove_actions():
-                del adds[remove.path]
-
-        paths = [self.loc.append_path(path)
-                 for path in adds]
-
-        return pyarrow.dataset.dataset(
-            paths,
-            format="parquet",
-            partitioning="hive",
-        )
