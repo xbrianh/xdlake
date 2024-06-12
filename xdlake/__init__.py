@@ -1,4 +1,5 @@
 import os
+from enum import Enum
 from uuid import uuid4
 from urllib.parse import urlparse
 
@@ -8,6 +9,13 @@ import pyarrow.dataset
 import pyarrow.parquet
 
 from xdlake import delta_log, utils
+
+
+class WriteMode(Enum):
+    append = "Append"
+    overwrite = "Overwrite"
+    error = "Error"
+    ignore = "Ignore"
 
 
 class StorageLocation:
@@ -67,7 +75,7 @@ class DeltaTable:
             return -1
         return max(self.log.keys())
 
-    def read_deltalog(self) -> dict[int, dict]:
+    def read_deltalog(self) -> dict[int, delta_log.DeltaLog]:
         log_url = self.loc.append_path("_delta_log")
         if not self.loc.fs.exists(log_url):
             return {}
@@ -128,14 +136,23 @@ def _write_table(table: pa.Table, loc: StorageLocation, version: int, **write_kw
 
     return add_actions
 
-def write(url: str, df: pa.Table, storage_options: dict | None = None, partition_by: list | None = None) -> dict:
+
+def write(
+    url: str,
+    df: pa.Table,
+    mode: str = "append",
+    partition_by: list | None = None,
+    storage_options: dict | None = None,
+):
     schema_info = delta_log.Schema.from_pyarrow_table(df)
     dt = DeltaTable(url, **(storage_options or dict()))
 
-    write_kwargs = dict()
+    write_kwargs: dict = dict()
     if partition_by is not None:
         write_kwargs["partitioning"] = partition_by
         write_kwargs["partitioning_flavor"] = "hive"
+    else:
+        partition_by = list()
 
     new_add_actions = _write_table(df, dt.loc, dt.version, **write_kwargs)
 

@@ -11,6 +11,7 @@ from xdlake import utils
 
 CLIENT_VERSION = "xdlake-0.0.0"
 
+
 class Type(Enum):
     commitInfo = "commitInfo"
     metaData = "metaData"
@@ -18,33 +19,32 @@ class Type(Enum):
     add = "add"
     remove = "remove"
 
-def delta_log_entry(obj):
-    obj = dataclass(obj)
-    if not hasattr(obj, "asdict"):
-        setattr(obj, "asdict", lambda obj: asdict(obj))
-    if not hasattr(obj, "json"):
-        setattr(obj, "json", lambda obj: json.dumps(asdict(obj)))
-    return obj
+class _DeltaLogItem:
+    def asdict(self):
+        return asdict(self)
 
-@delta_log_entry
-class Protocol:
+    def json(self):
+        return json.dumps(self.asdict())
+
+@dataclass
+class Protocol(_DeltaLogItem):
     minReaderVersion: int = 1
     minWriterVersion: int = 2
 
-@delta_log_entry
-class TableFormat:
+@dataclass
+class TableFormat(_DeltaLogItem):
     provider: str = "parquet"
     options: dict = field(default_factory=lambda: dict())
 
-@delta_log_entry
-class TableMetadata:
+@dataclass
+class TableMetadata(_DeltaLogItem):
     schemaString: dict
     createdTime: int = field(default_factory=lambda: utils.timestamp())
     id: str = field(default_factory=lambda: f"{uuid4()}")
     name: str | None = None
     description: str | None = None
     format: dict = field(default_factory=lambda: TableFormat().asdict())
-    partitionColumns: dict = field(default_factory=lambda: dict())
+    partitionColumns: list[str] = field(default_factory=lambda: list())
     configuration: dict = field(default_factory=lambda: dict())
 
 class TableOperationParm:
@@ -58,8 +58,8 @@ class TableCommitOperation:
     CREATE = "CREATE TABLE"
     WRITE = "WRITE"
 
-@delta_log_entry
-class TableCommitCreate:
+@dataclass
+class TableCommitCreate(_DeltaLogItem):
     timestamp: int
     operationParameters: dict
     operation: str = TableCommitOperation.CREATE
@@ -75,8 +75,8 @@ class TableCommitCreate:
         }
         return cls(timestamp=timestamp, operationParameters=op_parms)
 
-@delta_log_entry
-class TableCommitWrite:
+@dataclass
+class TableCommitWrite(_DeltaLogItem):
     timestamp: int
     operationParameters: dict
     operation: str = TableCommitOperation.WRITE
@@ -90,15 +90,15 @@ class TableCommitWrite:
         }
         return cls(timestamp=timestamp, operationParameters=op_parms)
 
-@delta_log_entry
-class SchemaField:
+@dataclass
+class SchemaField(_DeltaLogItem):
     name: str
     type: str
     nullable: bool
     metadata: dict
 
-@delta_log_entry
-class Schema:
+@dataclass
+class Schema(_DeltaLogItem):
     fields: list[dict]
     type: str = "struct"
 
@@ -110,8 +110,8 @@ class Schema:
         ]
         return cls(fields=fields)
 
-@delta_log_entry
-class Statistics:
+@dataclass
+class Statistics(_DeltaLogItem):
     numRecords: int
     minValues: dict
     maxValues: dict
@@ -120,9 +120,9 @@ class Statistics:
     @classmethod
     def from_parquet_file_metadata(cls, md: pa.parquet.FileMetaData) -> "Statistics":
         md = md.to_dict()
-        min_values = defaultdict(dict)
-        max_values = defaultdict(dict)
-        nullcounts = defaultdict(int)
+        min_values: dict = defaultdict(dict)
+        max_values: dict = defaultdict(dict)
+        nullcounts: dict = defaultdict(int)
         for rg_info in md["row_groups"]:
             for col_info in rg_info["columns"]:
                 column = col_info["path_in_schema"]
@@ -141,8 +141,8 @@ class Statistics:
                    maxValues=dict(max_values),
                    nullCount=dict(nullcounts))
 
-@delta_log_entry
-class Add:
+@dataclass
+class Add(_DeltaLogItem):
     path: str
     partitionValues: dict
     size: int
@@ -155,8 +155,8 @@ class Add:
     defaultRowCommitVersion: int | None = None
     clusteringProvider: str | None = None
 
-@delta_log_entry
-class Remove:
+@dataclass
+class Remove(_DeltaLogItem):
     path: str
     dataChange: bool
     deletionTimestamp: int
@@ -172,9 +172,11 @@ class DeltaLog:
             self.actions = [self.load_action(line) for line in handle]
 
     @staticmethod
-    def load_action(info: str | bytes | dict): 
-        if isinstance(info, (str, bytes)):
-            info = json.loads(info)
+    def load_action(obj: str | bytes | dict): 
+        if isinstance(obj, (str, bytes)):
+            info = json.loads(obj)
+        else:
+            info = obj
         action = Type[set(info.keys()).pop()]
         info = info[action.name]
 
