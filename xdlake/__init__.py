@@ -57,11 +57,25 @@ class StorageLocation:
                 self.fs.mkdir(folder)
         return self.fs.open(p, mode)
 
+def read_deltalog(loc: StorageLocation, version: int | None = None) -> dict[int, delta_log.DeltaLog]:
+    log_url = loc.append_path("_delta_log")
+    if not loc.fs.exists(log_url):
+        return {}
+    filepaths = sorted([file_info["name"] for file_info in loc.fs.ls(log_url, detail=True)
+                        if "file" == file_info["type"]])
+    log_entries = dict()
+    for filepath in filepaths:
+        entry_version = int(os.path.basename(filepath).split(".")[0])
+        with loc.open(filepath) as fh:
+            log_entries[entry_version] = delta_log.DeltaLog(fh)
+        if version in log_entries:
+            break
+    return log_entries
 
 class DeltaTable:
     def __init__(self, url: str, storage_options: dict | None = None):
         self.loc = StorageLocation(url)
-        self.log = self.read_deltalog()
+        self.log = read_deltalog(self.loc)
         self.adds = dict()
         for version, dl in self.log.items():
             for add in dl.add_actions():
@@ -74,19 +88,6 @@ class DeltaTable:
         if not self.log:
             return -1
         return max(self.log.keys())
-
-    def read_deltalog(self) -> dict[int, delta_log.DeltaLog]:
-        log_url = self.loc.append_path("_delta_log")
-        if not self.loc.fs.exists(log_url):
-            return {}
-        filepaths = sorted([file_info["name"] for file_info in self.loc.fs.ls(log_url, detail=True)
-                            if "file" == file_info["type"]])
-        log_entries = dict()
-        for filepath in filepaths:
-            version = int(os.path.basename(filepath).split(".")[0])
-            with self.loc.open(filepath) as fh:
-                log_entries[version] = delta_log.DeltaLog(fh)
-        return log_entries
 
     def to_pyarrow_dataset(self):
         paths = [self.loc.append_path(path) for path in self.adds]
