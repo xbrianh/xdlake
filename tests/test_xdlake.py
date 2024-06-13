@@ -30,6 +30,11 @@ def pyarrow_table_gen() -> pyarrow.Table:
         t = t.append_column("order", pyarrow.array(order, pyarrow.float64()))
         yield t
 
+def _assert_arrow_table_equal(a, b):
+    a = a.to_pandas().sort_values("order").sort_index(axis=1).reset_index(drop=True)
+    b = b.to_pandas().sort_values("order").sort_index(axis=1).reset_index(drop=True)
+    assert_frame_equal(a, b)
+
 class TestXdLake(unittest.TestCase):
     def setUp(self):
         self.table_gen = pyarrow_table_gen()
@@ -43,16 +48,16 @@ class TestXdLake(unittest.TestCase):
             writer.write(t, partition_by=["cats", "bats"])
 
         with self.subTest("should aggree", mode="append"):
-            df_expected = deltalake.DeltaTable(test_dir).to_pandas().sort_values("order").sort_index(axis=1).reset_index(drop=True)
-            df = xdlake.DeltaTable(test_dir).to_pyarrow_dataset().to_table().to_pandas().sort_values("order").sort_index(axis=1).reset_index(drop=True)
-            assert_frame_equal(df_expected, df)
+            df_expected = deltalake.DeltaTable(test_dir)
+            df = xdlake.DeltaTable(test_dir).to_pyarrow_dataset().to_table()
+            _assert_arrow_table_equal(df_expected, df)
 
         with self.subTest("should aggree", mode="overwrite"):
             t = next(self.table_gen)
             writer.write(t, partition_by=["cats", "bats"], mode="overwrite")
-            df_expected = deltalake.DeltaTable(test_dir).to_pandas()
-            df = xdlake.DeltaTable(test_dir).to_pyarrow_dataset().to_table().to_pandas()
-            self.assertEqual(df_expected.shape, df.shape)
+            df_expected = deltalake.DeltaTable(test_dir)
+            df = xdlake.DeltaTable(test_dir).to_pyarrow_dataset().to_table()
+            _assert_arrow_table_equal(df_expected, df)
 
     def test_xdlake_s3(self):
         test_dir = f"s3://test-xdlake/tests/{uuid4()}"
