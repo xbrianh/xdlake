@@ -12,24 +12,28 @@ from pandas.testing import assert_frame_equal
 import xdlake
 
 
-def random_pyarrow_table() -> pyarrow.Table:
-    cats = ["S", "A", "D"]
-    bats = ["1", "2", "3"]
-    t = pyarrow.table(
-        [np.random.random(11) for _ in range(5)],
-        names = ["bob", "sue", "george", "rebecca", "morgain"],
-    )
-    t = t.append_column("cats", [random.choice(cats) for _ in range(len(t))])
-    t = t.append_column("bats", [random.choice(bats) for _ in range(len(t))])
-    return t
+def pyarrow_table_gen() -> pyarrow.Table:
+    while True:
+        cats = ["S", "A", "D"]
+        bats = ["1", "2", "3"]
+        t = pyarrow.table(
+            [np.random.random(11) for _ in range(5)],
+            names = ["bob", "sue", "george", "rebecca", "morgain"],
+        )
+        t = t.append_column("cats", [random.choice(cats) for _ in range(len(t))])
+        t = t.append_column("bats", [random.choice(bats) for _ in range(len(t))])
+        yield t
 
 class TestXdLake(unittest.TestCase):
+    def setUp(self):
+        self.table_gen = pyarrow_table_gen()
+
     def test_xdlake(self):
         test_dir = f"testdl/{uuid4()}"
         writer = xdlake.Writer(test_dir)
 
         for _ in range(4):
-            t = random_pyarrow_table()
+            t = next(self.table_gen)
             writer.write(t, partition_by=["cats", "bats"])
 
         with self.subTest("should aggree", mode="append"):
@@ -38,7 +42,7 @@ class TestXdLake(unittest.TestCase):
             self.assertEqual(df_expected.shape, df.shape)
 
         with self.subTest("should aggree", mode="overwrite"):
-            t = random_pyarrow_table()
+            t = next(self.table_gen)
             writer.write(t, partition_by=["cats", "bats"], mode="overwrite")
             df_expected = deltalake.DeltaTable(test_dir).to_pandas()
             df = xdlake.DeltaTable(test_dir).to_pyarrow_dataset().to_table().to_pandas()
@@ -49,7 +53,7 @@ class TestXdLake(unittest.TestCase):
         writer = xdlake.Writer(test_dir)
 
         for _ in range(4):
-            t = random_pyarrow_table()
+            t = next(self.table_gen)
             writer.write(t, partition_by=["cats"])
 
         # t = deltalake.DeltaTable("testdl")
@@ -78,7 +82,7 @@ class TestXdLake(unittest.TestCase):
         shutil.rmtree(test_dir, ignore_errors=True)
 
         for _ in range(1):
-            t = random_pyarrow_table()
+            t = next(self.table_gen)
             deltalake.write_deltalake("tdl", t, mode="append")
 
         for _ in range(1):
