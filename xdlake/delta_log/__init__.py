@@ -3,6 +3,7 @@ from enum import Enum
 from uuid import uuid4
 from collections import defaultdict
 from dataclasses import dataclass, asdict, field
+from typing import Iterable
 
 import pyarrow as pa
 
@@ -223,3 +224,24 @@ class DeltaLogEntry:
     def remove_actions(self) -> list[Remove]:
         return [a for a in self.actions
                 if isinstance(a, Remove)]
+
+def resolve_add_actions(versioned_log_entries: dict[int, DeltaLogEntry]) -> dict[str, Add]:
+    adds = dict()
+    for log in versioned_log_entries.values():
+        for add in log.add_actions():
+            adds[add.path] = add
+        for remove in log.remove_actions():
+            del adds[remove.path]
+    return adds
+
+def generate_remove_acctions(add_actions: Iterable[Add]) -> list[Remove]:
+    remove_actions = list()
+    for add in add_actions:
+        remove =  Remove(path=add.path,
+                         dataChange=True,
+                         deletionTimestamp=utils.timestamp(),
+                         extendedFileMetadata=True,
+                         partitionValues=add.partitionValues,
+                         size=add.size)
+        remove_actions.append(remove)
+    return remove_actions

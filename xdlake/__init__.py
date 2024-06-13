@@ -2,6 +2,7 @@ import os
 from enum import Enum
 from uuid import uuid4
 from urllib.parse import urlparse
+from typing import Iterable
 
 import fsspec
 import pyarrow as pa
@@ -57,20 +58,20 @@ class StorageLocation:
                 self.fs.mkdir(folder)
         return self.fs.open(p, mode)
 
-def read_deltalog(loc: StorageLocation, version: int | None = None) -> dict[int, delta_log.DeltaLogEntry]:
+def read_versioned_log_entries(loc: StorageLocation, version: int | None = None) -> dict[int, delta_log.DeltaLogEntry]:
     log_url = loc.append_path("_delta_log")
     if not loc.fs.exists(log_url):
         return {}
     filepaths = sorted([file_info["name"] for file_info in loc.fs.ls(log_url, detail=True)
                         if "file" == file_info["type"]])
-    log_entries = dict()
+    versioned_log_entries = dict()
     for filepath in filepaths:
         entry_version = int(os.path.basename(filepath).split(".")[0])
         with loc.open(filepath) as fh:
-            log_entries[entry_version] = delta_log.DeltaLogEntry(fh)
-        if version in log_entries:
+            versioned_log_entries[entry_version] = delta_log.DeltaLogEntry(fh)
+        if version in versioned_log_entries:
             break
-    return log_entries
+    return versioned_log_entries
 
 class Writer:
     def __init__(self, loc: StorageLocation | str, storage_options: dict | None = None):
@@ -137,8 +138,19 @@ class Writer:
         log.actions.append(delta_log.TableCommitWrite.with_parms(utils.timestamp(), mode=mode, partition_by=partition_by))
         return log
 
-    def _overwrite_log_entry(self, partition_by: list, add_actions: list[delta_log.Add]) -> delta_log.DeltaLogEntry:
-        raise NotImplementedError()
+    def _overwrite_log_entry(
+        self,
+        partition_by: list,
+        existing_add_actions: Iterable[delta_log.Add],
+        add_actions: list[delta_log.Add]
+    ) -> delta_log.DeltaLogEntry:
+        mode = WriteMode.overwrite.value
+        log = delta_log.DeltaLogEntry()
+        remove_actions = delta_log.generate_remove_acctions(existing_add_actions)
+        log.actions.extend(remove_actions)
+        log.actions.extend(add_actions)
+        log.actions.append(delta_log.TableCommitWrite.with_parms(utils.timestamp(), mode=mode, partition_by=partition_by))
+        return log
 
     def write(
         self,
@@ -148,11 +160,11 @@ class Writer:
         storage_options: dict | None = None,
     ):
         schema_info = delta_log.Schema.from_pyarrow_table(df)
-        log = read_deltalog(self.loc)
-        if not log:
+        versioned_log_entries = read_versioned_log_entries(self.loc)
+        if not versioned_log_entries:
             new_table_version = 0
         else:
-            new_table_version = 1 + max(log.keys())
+            new_table_version = 1 + max(versioned_log_entries.keys())
 
         write_kwargs: dict = dict()
         if partition_by is not None:
@@ -167,8 +179,11 @@ class Writer:
         if 0 == new_table_version:
             dlog = self._new_table_log_entry(schema_info, partition_by, new_add_actions)
             self.loc.fs.mkdir(os.path.join(self.loc.path, "_delta_log"))
-        elif WriteMode.overwrite == WriteMode[mode]:
+        elif WriteMode.append == WriteMode[mode]:
             dlog = self._append_log_entry(partition_by, new_add_actions)
+        elif WriteMode.overwrite == WriteMode[mode]:
+            existing_add_actions = delta_log.resolve_add_actions(versioned_log_entries).values()
+            dlog = self._overwrite_log_entry(partition_by, existing_add_actions, new_add_actions)
 
         with self.loc.open(self.loc.append_path("_delta_log", f"{new_table_version:020}.json"), "w") as fh:
             dlog.write(fh)
@@ -176,13 +191,8 @@ class Writer:
 class DeltaTable:
     def __init__(self, url: str, storage_options: dict | None = None):
         self.loc = StorageLocation(url, storage_options)
-        self.log = read_deltalog(self.loc)
-        self.adds = dict()
-        for version, dl in self.log.items():
-            for add in dl.add_actions():
-                self.adds[add.path] = add
-            for remove in dl.remove_actions():
-                del self.adds[remove.path]
+        self.log = read_versioned_log_entries(self.loc)
+        self.adds = delta_log.resolve_add_actions(self.log)
 
     @property
     def version(self) -> int:

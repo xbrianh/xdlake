@@ -32,12 +32,17 @@ class TestXdLake(unittest.TestCase):
             t = random_pyarrow_table()
             writer.write(t, partition_by=["cats", "bats"])
 
-        dt = deltalake.DeltaTable(test_dir)
-        dt.to_pandas()
+        with self.subTest("should aggree", mode="append"):
+            df_expected = deltalake.DeltaTable(test_dir).to_pandas()
+            df = xdlake.DeltaTable(test_dir).to_pyarrow_dataset().to_table().to_pandas()
+            self.assertEqual(df_expected.shape, df.shape)
 
-        dt = xdlake.DeltaTable(test_dir)
-        df = dt.to_pyarrow_dataset().to_table().to_pandas()
-        print(df)
+        with self.subTest("should aggree", mode="overwrite"):
+            t = random_pyarrow_table()
+            writer.write(t, partition_by=["cats", "bats"], mode="overwrite")
+            df_expected = deltalake.DeltaTable(test_dir).to_pandas()
+            df = xdlake.DeltaTable(test_dir).to_pyarrow_dataset().to_table().to_pandas()
+            self.assertEqual(df_expected.shape, df.shape)
 
     def test_xdlake_s3(self):
         test_dir = f"s3://test-xdlake/tests/{uuid4()}"
