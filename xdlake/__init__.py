@@ -19,10 +19,10 @@ class WriteMode(Enum):
 
 
 class StorageLocation:
-    def __init__(self, url: str, **storage_options):
+    def __init__(self, url: str, storage_options: dict | None = None):
         parsed = urlparse(url)
         self.scheme = parsed.scheme or "file"
-        self.fs = fsspec.filesystem(self.scheme, **storage_options)
+        self.fs = fsspec.filesystem(self.scheme, **(storage_options or dict()))
 
         if "file" == self.scheme:
             if parsed.path.startswith(os.path.sep):
@@ -74,7 +74,7 @@ def read_deltalog(loc: StorageLocation, version: int | None = None) -> dict[int,
 
 class DeltaTable:
     def __init__(self, url: str, storage_options: dict | None = None):
-        self.loc = StorageLocation(url)
+        self.loc = StorageLocation(url, storage_options)
         self.log = read_deltalog(self.loc)
         self.adds = dict()
         for version, dl in self.log.items():
@@ -97,77 +97,91 @@ class DeltaTable:
             partitioning="hive",
         )
 
+class Writer:
+    def __init__(self, loc: StorageLocation | str, storage_options: dict | None = None):
+        if isinstance(loc, StorageLocation):
+            self.loc = loc
+        elif isinstance(loc, str):
+            self.loc = StorageLocation(loc, storage_options)
+        else:
+            raise ValueError(f"Cannot handle storage location '{loc}'")
 
-def _write_table(table: pa.Table, loc: StorageLocation, version: int, **write_kwargs):
-    add_actions = list()
+    def _write_data(self, table: pa.Table, version: int, **write_kwargs):
+        add_actions = list()
 
-    def visitor(visited_file):
-        stats = delta_log.Statistics.from_parquet_file_metadata(
-            pyarrow.parquet.ParquetFile(visited_file.path).metadata
-        )
-
-        relpath = visited_file.path.replace(loc.path, "").strip("/")
-        partition_values = dict()
-
-        for part in relpath.split("/"):
-            if "=" in part:
-                key, value = part.split("=")
-                partition_values[key] = value
-
-        add_actions.append(
-            delta_log.Add(
-                path=relpath,
-                modificationTime=utils.timestamp(),
-                size=loc.fs.size(visited_file.path),
-                stats=stats.json(),
-                partitionValues=partition_values
+        def visitor(visited_file):
+            stats = delta_log.Statistics.from_parquet_file_metadata(
+                pyarrow.parquet.ParquetFile(visited_file.path).metadata
             )
+
+            relpath = visited_file.path.replace(self.loc.path, "").strip("/")
+            partition_values = dict()
+
+            for part in relpath.split("/"):
+                if "=" in part:
+                    key, value = part.split("=")
+                    partition_values[key] = value
+
+            add_actions.append(
+                delta_log.Add(
+                    path=relpath,
+                    modificationTime=utils.timestamp(),
+                    size=self.loc.fs.size(visited_file.path),
+                    stats=stats.json(),
+                    partitionValues=partition_values
+                )
+            )
+
+        pyarrow.dataset.write_dataset(
+            table,
+            self.loc.path,
+            format="parquet",
+            filesystem=self.loc.fs,
+            basename_template=f"{version}-{uuid4()}-{{i}}.parquet",
+            file_visitor=visitor,
+            existing_data_behavior="overwrite_or_ignore",
+            ** write_kwargs,
         )
 
-    pyarrow.dataset.write_dataset(
-        table,
-        loc.path,
-        format="parquet",
-        filesystem=loc.fs,
-        basename_template=f"{version}-{uuid4()}-{{i}}.parquet",
-        file_visitor=visitor,
-        existing_data_behavior="overwrite_or_ignore",
-        ** write_kwargs,
-    )
+        return add_actions
 
-    return add_actions
+    def write(
+        self,
+        df: pa.Table,
+        mode: str = "append",
+        partition_by: list | None = None,
+        storage_options: dict | None = None,
+    ):
+        schema_info = delta_log.Schema.from_pyarrow_table(df)
+        log = read_deltalog(self.loc)
+        if not log:
+            new_table_version = 0
+        else:
+            new_table_version = 1 + max(log.keys())
 
+        write_kwargs: dict = dict()
+        if partition_by is not None:
+            write_kwargs["partitioning"] = partition_by
+            write_kwargs["partitioning_flavor"] = "hive"
+        else:
+            partition_by = list()
 
-def write(
-    url: str,
-    df: pa.Table,
-    mode: str = "append",
-    partition_by: list | None = None,
-    storage_options: dict | None = None,
-):
-    schema_info = delta_log.Schema.from_pyarrow_table(df)
-    dt = DeltaTable(url, **(storage_options or dict()))
+        new_add_actions = self._write_data(df, new_table_version, **write_kwargs)
 
-    write_kwargs: dict = dict()
-    if partition_by is not None:
-        write_kwargs["partitioning"] = partition_by
-        write_kwargs["partitioning_flavor"] = "hive"
-    else:
-        partition_by = list()
+        dlog = delta_log.DeltaLog()
+        if 0 == new_table_version:
+            protocol = delta_log.Protocol()
+            table_metadata = delta_log.TableMetadata(schemaString=schema_info.json(), partitionColumns=partition_by)
+            dlog.actions.append(protocol)
+            dlog.actions.append(table_metadata)
+            dlog.actions.extend(new_add_actions)
+            dlog.actions.append(delta_log.TableCommitCreate.with_parms(self.loc.path, utils.timestamp(), table_metadata, protocol))
+            self.loc.fs.mkdir(os.path.join(self.loc.path, "_delta_log"))
+        else:
+            dlog.actions.extend(new_add_actions)
+            dlog.actions.append(delta_log.TableCommitWrite.with_parms(utils.timestamp(), mode="Append", partition_by=partition_by))
+        with self.loc.open(self.loc.append_path("_delta_log", f"{new_table_version:020}.json"), "w") as fh:
+            dlog.write(fh)
 
-    new_add_actions = _write_table(df, dt.loc, dt.version, **write_kwargs)
-
-    dlog = delta_log.DeltaLog()
-    if -1 == dt.version:
-        protocol = delta_log.Protocol()
-        table_metadata = delta_log.TableMetadata(schemaString=schema_info.json(), partitionColumns=partition_by)
-        dlog.actions.append(protocol)
-        dlog.actions.append(table_metadata)
-        dlog.actions.extend(new_add_actions)
-        dlog.actions.append(delta_log.TableCommitCreate.with_parms(dt.loc.path, utils.timestamp(), table_metadata, protocol))
-        dt.loc.fs.mkdir(os.path.join(dt.loc.path, "_delta_log"))
-    else:
-        dlog.actions.extend(new_add_actions)
-        dlog.actions.append(delta_log.TableCommitWrite.with_parms(utils.timestamp(), mode="Append", partition_by=partition_by))
-    with dt.loc.open(dt.loc.append_path("_delta_log", f"{1 + dt.version:020}.json"), "w") as fh:
-        dlog.write(fh)
+def write(url: str, df: pa.Table, **kwargs):
+    Writer(url).write(df, **kwargs)
