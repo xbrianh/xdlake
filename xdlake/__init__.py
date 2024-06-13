@@ -57,7 +57,7 @@ class StorageLocation:
                 self.fs.mkdir(folder)
         return self.fs.open(p, mode)
 
-def read_deltalog(loc: StorageLocation, version: int | None = None) -> dict[int, delta_log.DeltaLog]:
+def read_deltalog(loc: StorageLocation, version: int | None = None) -> dict[int, delta_log.DeltaLogEntry]:
     log_url = loc.append_path("_delta_log")
     if not loc.fs.exists(log_url):
         return {}
@@ -67,7 +67,7 @@ def read_deltalog(loc: StorageLocation, version: int | None = None) -> dict[int,
     for filepath in filepaths:
         entry_version = int(os.path.basename(filepath).split(".")[0])
         with loc.open(filepath) as fh:
-            log_entries[entry_version] = delta_log.DeltaLog(fh)
+            log_entries[entry_version] = delta_log.DeltaLogEntry(fh)
         if version in log_entries:
             break
     return log_entries
@@ -120,8 +120,8 @@ class Writer:
 
         return add_actions
 
-    def _new_table_log_entry(self, schema: delta_log.Schema, partition_by: list, add_actions: list[delta_log.Add]) -> delta_log.DeltaLog:
-        log = delta_log.DeltaLog()
+    def _new_table_log_entry(self, schema: delta_log.Schema, partition_by: list, add_actions: list[delta_log.Add]) -> delta_log.DeltaLogEntry:
+        log = delta_log.DeltaLogEntry()
         protocol = delta_log.Protocol()
         table_metadata = delta_log.TableMetadata(schemaString=schema.json(), partitionColumns=partition_by)
         log.actions.append(protocol)
@@ -130,8 +130,8 @@ class Writer:
         log.actions.append(delta_log.TableCommitCreate.with_parms(self.loc.path, utils.timestamp(), table_metadata, protocol))
         return log
 
-    def _append_log_entry(self, partition_by: list, add_actions: list[delta_log.Add]) -> delta_log.DeltaLog:
-        log = delta_log.DeltaLog()
+    def _append_log_entry(self, partition_by: list, add_actions: list[delta_log.Add]) -> delta_log.DeltaLogEntry:
+        log = delta_log.DeltaLogEntry()
         log.actions.extend(add_actions)
         log.actions.append(delta_log.TableCommitWrite.with_parms(utils.timestamp(), mode="Append", partition_by=partition_by))
         return log
@@ -159,7 +159,7 @@ class Writer:
 
         new_add_actions = self.write_data(df, new_table_version, **write_kwargs)
 
-        dlog = delta_log.DeltaLog()
+        dlog = delta_log.DeltaLogEntry()
         if 0 == new_table_version:
             dlog = self._new_table_log_entry(schema_info, partition_by, new_add_actions)
             self.loc.fs.mkdir(os.path.join(self.loc.path, "_delta_log"))

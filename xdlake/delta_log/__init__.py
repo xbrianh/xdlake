@@ -164,7 +164,7 @@ class Remove(_DeltaLogItem):
     partitionValues: dict
     size: int
 
-class DeltaLog:
+class DeltaLogEntry:
     def __init__(self, handle = None):
         if handle is None:
             self.actions = list()
