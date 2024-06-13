@@ -120,6 +120,22 @@ class Writer:
 
         return add_actions
 
+    def _new_table_log_entry(self, schema: delta_log.Schema, partition_by: list, add_actions: list[delta_log.Add]) -> delta_log.DeltaLog:
+        log = delta_log.DeltaLog()
+        protocol = delta_log.Protocol()
+        table_metadata = delta_log.TableMetadata(schemaString=schema.json(), partitionColumns=partition_by)
+        log.actions.append(protocol)
+        log.actions.append(table_metadata)
+        log.actions.extend(add_actions)
+        log.actions.append(delta_log.TableCommitCreate.with_parms(self.loc.path, utils.timestamp(), table_metadata, protocol))
+        return log
+
+    def _append_log_entry(self, partition_by: list, add_actions: list[delta_log.Add]) -> delta_log.DeltaLog:
+        log = delta_log.DeltaLog()
+        log.actions.extend(add_actions)
+        log.actions.append(delta_log.TableCommitWrite.with_parms(utils.timestamp(), mode="Append", partition_by=partition_by))
+        return log
+
     def write(
         self,
         df: pa.Table,
@@ -145,16 +161,11 @@ class Writer:
 
         dlog = delta_log.DeltaLog()
         if 0 == new_table_version:
-            protocol = delta_log.Protocol()
-            table_metadata = delta_log.TableMetadata(schemaString=schema_info.json(), partitionColumns=partition_by)
-            dlog.actions.append(protocol)
-            dlog.actions.append(table_metadata)
-            dlog.actions.extend(new_add_actions)
-            dlog.actions.append(delta_log.TableCommitCreate.with_parms(self.loc.path, utils.timestamp(), table_metadata, protocol))
+            dlog = self._new_table_log_entry(schema_info, partition_by, new_add_actions)
             self.loc.fs.mkdir(os.path.join(self.loc.path, "_delta_log"))
         else:
-            dlog.actions.extend(new_add_actions)
-            dlog.actions.append(delta_log.TableCommitWrite.with_parms(utils.timestamp(), mode="Append", partition_by=partition_by))
+            dlog = self._append_log_entry(partition_by, new_add_actions)
+
         with self.loc.open(self.loc.append_path("_delta_log", f"{new_table_version:020}.json"), "w") as fh:
             dlog.write(fh)
 
