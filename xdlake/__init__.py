@@ -131,10 +131,14 @@ class Writer:
         return log
 
     def _append_log_entry(self, partition_by: list, add_actions: list[delta_log.Add]) -> delta_log.DeltaLogEntry:
+        mode = WriteMode.append.value
         log = delta_log.DeltaLogEntry()
         log.actions.extend(add_actions)
-        log.actions.append(delta_log.TableCommitWrite.with_parms(utils.timestamp(), mode="Append", partition_by=partition_by))
+        log.actions.append(delta_log.TableCommitWrite.with_parms(utils.timestamp(), mode=mode, partition_by=partition_by))
         return log
+
+    def _overwrite_log_entry(self, partition_by: list, add_actions: list[delta_log.Add]) -> delta_log.DeltaLogEntry:
+        raise NotImplementedError()
 
     def write(
         self,
@@ -163,7 +167,7 @@ class Writer:
         if 0 == new_table_version:
             dlog = self._new_table_log_entry(schema_info, partition_by, new_add_actions)
             self.loc.fs.mkdir(os.path.join(self.loc.path, "_delta_log"))
-        else:
+        elif WriteMode.overwrite == WriteMode[mode]:
             dlog = self._append_log_entry(partition_by, new_add_actions)
 
         with self.loc.open(self.loc.append_path("_delta_log", f"{new_table_version:020}.json"), "w") as fh:
