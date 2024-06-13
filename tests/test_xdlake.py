@@ -13,15 +13,21 @@ import xdlake
 
 
 def pyarrow_table_gen() -> pyarrow.Table:
+    order_parm = 0
     while True:
         cats = ["S", "A", "D"]
-        bats = ["1", "2", "3"]
+        bats = ["F", "G", "H"]
         t = pyarrow.table(
             [np.random.random(11) for _ in range(5)],
             names = ["bob", "sue", "george", "rebecca", "morgain"],
         )
+
+        order = [float(i) + order_parm for i in range(len(t))]
+        order_parm += len(t)
+
         t = t.append_column("cats", [random.choice(cats) for _ in range(len(t))])
         t = t.append_column("bats", [random.choice(bats) for _ in range(len(t))])
+        t = t.append_column("order", pyarrow.array(order, pyarrow.float64()))
         yield t
 
 class TestXdLake(unittest.TestCase):
@@ -32,14 +38,14 @@ class TestXdLake(unittest.TestCase):
         test_dir = f"testdl/{uuid4()}"
         writer = xdlake.Writer(test_dir)
 
-        for _ in range(4):
+        for _ in range(3):
             t = next(self.table_gen)
             writer.write(t, partition_by=["cats", "bats"])
 
         with self.subTest("should aggree", mode="append"):
-            df_expected = deltalake.DeltaTable(test_dir).to_pandas()
-            df = xdlake.DeltaTable(test_dir).to_pyarrow_dataset().to_table().to_pandas()
-            self.assertEqual(df_expected.shape, df.shape)
+            df_expected = deltalake.DeltaTable(test_dir).to_pandas().sort_values("order").sort_index(axis=1).reset_index(drop=True)
+            df = xdlake.DeltaTable(test_dir).to_pyarrow_dataset().to_table().to_pandas().sort_values("order").sort_index(axis=1).reset_index(drop=True)
+            assert_frame_equal(df_expected, df)
 
         with self.subTest("should aggree", mode="overwrite"):
             t = next(self.table_gen)

@@ -98,6 +98,17 @@ class SchemaField(_DeltaLogItem):
     nullable: bool
     metadata: dict
 
+arrow_to_delta_type_map = {
+    pa.int64(): "long",
+    pa.float64(): "double",
+    pa.string(): "string",
+}
+
+def _data_type_from_arrow(_t):
+    if _t not in arrow_to_delta_type_map:
+        raise TypeError(f"Cannot handle arrow type '{_t}', type={type(_t)}")
+    return arrow_to_delta_type_map[_t]
+
 @dataclass
 class Schema(_DeltaLogItem):
     fields: list[dict]
@@ -106,7 +117,7 @@ class Schema(_DeltaLogItem):
     @classmethod
     def from_pyarrow_table(cls, t: pa.Table) -> "Schema":
         fields = [
-            SchemaField(f.name, str(f.type), f.nullable, f.metadata or {}).asdict()
+            SchemaField(f.name, _data_type_from_arrow(f.type), f.nullable, f.metadata or {}).asdict()
             for f in t.schema
         ]
         return cls(fields=fields)
