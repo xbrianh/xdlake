@@ -72,31 +72,6 @@ def read_deltalog(loc: StorageLocation, version: int | None = None) -> dict[int,
             break
     return log_entries
 
-class DeltaTable:
-    def __init__(self, url: str, storage_options: dict | None = None):
-        self.loc = StorageLocation(url, storage_options)
-        self.log = read_deltalog(self.loc)
-        self.adds = dict()
-        for version, dl in self.log.items():
-            for add in dl.add_actions():
-                self.adds[add.path] = add
-            for remove in dl.remove_actions():
-                del self.adds[remove.path]
-
-    @property
-    def version(self) -> int:
-        if not self.log:
-            return -1
-        return max(self.log.keys())
-
-    def to_pyarrow_dataset(self):
-        paths = [self.loc.append_path(path) for path in self.adds]
-        return pyarrow.dataset.dataset(
-            paths,
-            format="parquet",
-            partitioning="hive",
-        )
-
 class Writer:
     def __init__(self, loc: StorageLocation | str, storage_options: dict | None = None):
         if isinstance(loc, StorageLocation):
@@ -106,7 +81,7 @@ class Writer:
         else:
             raise ValueError(f"Cannot handle storage location '{loc}'")
 
-    def _write_data(self, table: pa.Table, version: int, **write_kwargs):
+    def write_data(self, table: pa.Table, version: int, **write_kwargs) -> list[delta_log.Add]:
         add_actions = list()
 
         def visitor(visited_file):
@@ -166,7 +141,7 @@ class Writer:
         else:
             partition_by = list()
 
-        new_add_actions = self._write_data(df, new_table_version, **write_kwargs)
+        new_add_actions = self.write_data(df, new_table_version, **write_kwargs)
 
         dlog = delta_log.DeltaLog()
         if 0 == new_table_version:
@@ -183,5 +158,27 @@ class Writer:
         with self.loc.open(self.loc.append_path("_delta_log", f"{new_table_version:020}.json"), "w") as fh:
             dlog.write(fh)
 
-def write(url: str, df: pa.Table, **kwargs):
-    Writer(url).write(df, **kwargs)
+class DeltaTable:
+    def __init__(self, url: str, storage_options: dict | None = None):
+        self.loc = StorageLocation(url, storage_options)
+        self.log = read_deltalog(self.loc)
+        self.adds = dict()
+        for version, dl in self.log.items():
+            for add in dl.add_actions():
+                self.adds[add.path] = add
+            for remove in dl.remove_actions():
+                del self.adds[remove.path]
+
+    @property
+    def version(self) -> int:
+        if not self.log:
+            return -1
+        return max(self.log.keys())
+
+    def to_pyarrow_dataset(self):
+        paths = [self.loc.append_path(path) for path in self.adds]
+        return pyarrow.dataset.dataset(
+            paths,
+            format="parquet",
+            partitioning="hive",
+        )

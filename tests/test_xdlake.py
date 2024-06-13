@@ -26,10 +26,11 @@ def random_pyarrow_table() -> pyarrow.Table:
 class TestXdLake(unittest.TestCase):
     def test_xdlake(self):
         test_dir = f"testdl/{uuid4()}"
+        writer = xdlake.Writer(test_dir)
 
         for _ in range(4):
             t = random_pyarrow_table()
-            xdlake.write(test_dir, t, partition_by=["cats", "bats"])
+            writer.write(t, partition_by=["cats", "bats"])
 
         dt = deltalake.DeltaTable(test_dir)
         dt.to_pandas()
@@ -40,10 +41,11 @@ class TestXdLake(unittest.TestCase):
 
     def test_xdlake_s3(self):
         test_dir = f"s3://test-xdlake/tests/{uuid4()}"
+        writer = xdlake.Writer(test_dir)
 
         for _ in range(4):
             t = random_pyarrow_table()
-            xdlake.write(test_dir, t, partition_by=["cats"])
+            writer.write(t, partition_by=["cats"])
 
         # t = deltalake.DeltaTable("testdl")
         # t.to_pandas()
