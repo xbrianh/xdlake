@@ -27,7 +27,7 @@ class Type(Enum):
     add = "add"
     remove = "remove"
 
-class _DeltaLogItem:
+class _DeltaLogAction:
     def asdict(self):
         return asdict(self)
 
@@ -35,17 +35,17 @@ class _DeltaLogItem:
         return json.dumps(self.asdict())
 
 @dataclass
-class Protocol(_DeltaLogItem):
+class Protocol(_DeltaLogAction):
     minReaderVersion: int = 1
     minWriterVersion: int = 2
 
 @dataclass
-class TableFormat(_DeltaLogItem):
+class TableFormat(_DeltaLogAction):
     provider: str = "parquet"
     options: dict = field(default_factory=lambda: dict())
 
 @dataclass
-class TableMetadata(_DeltaLogItem):
+class TableMetadata(_DeltaLogAction):
     schemaString: dict
     createdTime: int = field(default_factory=lambda: utils.timestamp())
     id: str = field(default_factory=lambda: f"{uuid4()}")
@@ -67,7 +67,7 @@ class TableCommitOperation:
     WRITE = "WRITE"
 
 @dataclass
-class TableCommitCreate(_DeltaLogItem):
+class TableCommitCreate(_DeltaLogAction):
     timestamp: int
     operationParameters: dict
     operation: str = TableCommitOperation.CREATE
@@ -84,7 +84,7 @@ class TableCommitCreate(_DeltaLogItem):
         return cls(timestamp=timestamp, operationParameters=op_parms)
 
 @dataclass
-class TableCommitWrite(_DeltaLogItem):
+class TableCommitWrite(_DeltaLogAction):
     timestamp: int
     operationParameters: dict
     operation: str = TableCommitOperation.WRITE
@@ -99,7 +99,7 @@ class TableCommitWrite(_DeltaLogItem):
         return cls(timestamp=timestamp, operationParameters=op_parms)
 
 @dataclass
-class SchemaField(_DeltaLogItem):
+class SchemaField(_DeltaLogAction):
     name: str
     type: str
     nullable: bool
@@ -117,7 +117,7 @@ def _data_type_from_arrow(_t):
     return arrow_to_delta_type_map[_t]
 
 @dataclass
-class Schema(_DeltaLogItem):
+class Schema(_DeltaLogAction):
     fields: list[dict]
     type: str = "struct"
 
@@ -130,7 +130,7 @@ class Schema(_DeltaLogItem):
         return cls(fields=fields)
 
 @dataclass
-class Statistics(_DeltaLogItem):
+class Statistics(_DeltaLogAction):
     numRecords: int
     minValues: dict
     maxValues: dict
@@ -161,7 +161,7 @@ class Statistics(_DeltaLogItem):
                    nullCount=dict(nullcounts))
 
 @dataclass
-class Add(_DeltaLogItem):
+class Add(_DeltaLogAction):
     path: str
     partitionValues: dict
     size: int
@@ -175,7 +175,7 @@ class Add(_DeltaLogItem):
     clusteringProvider: str | None = None
 
 @dataclass
-class Remove(_DeltaLogItem):
+class Remove(_DeltaLogAction):
     path: str
     dataChange: bool
     deletionTimestamp: int
@@ -244,7 +244,7 @@ class DeltaLogEntry:
                 if isinstance(a, Remove)]
 
     @classmethod
-    def with_actions(cls, actions: list[_DeltaLogItem]) -> "DeltaLogEntry":
+    def with_actions(cls, actions: list[_DeltaLogAction]) -> "DeltaLogEntry":
         entry = cls()
         entry.actions.extend(actions)
         return entry
