@@ -13,6 +13,13 @@ from xdlake import utils
 CLIENT_VERSION = "xdlake-0.0.0"
 
 
+class WriteMode(Enum):
+    append = "Append"
+    overwrite = "Overwrite"
+    error = "Error"
+    ignore = "Ignore"
+
+
 class Type(Enum):
     commitInfo = "commitInfo"
     metaData = "metaData"
@@ -235,6 +242,35 @@ class DeltaLogEntry:
     def remove_actions(self) -> list[Remove]:
         return [a for a in self.actions
                 if isinstance(a, Remove)]
+
+    @classmethod
+    def with_actions(cls, actions: list[_DeltaLogItem]) -> "DeltaLogEntry":
+        entry = cls()
+        entry.actions.extend(actions)
+        return entry
+
+    @classmethod
+    def CreateTable(cls, path: str, schema: Schema, partition_by: list, add_actions: list[Add]) -> "DeltaLogEntry":
+        protocol = Protocol()
+        table_metadata = TableMetadata(schemaString=schema.json(), partitionColumns=partition_by)
+        commit = TableCommitCreate.with_parms(path, utils.timestamp(), table_metadata, protocol)
+        return cls.with_actions([protocol, table_metadata, *add_actions, commit])
+
+    @classmethod
+    def AppendTable(cls, partition_by: list, add_actions: list[Add]) -> "DeltaLogEntry":
+        commit = TableCommitWrite.with_parms(utils.timestamp(), mode=WriteMode.append.value, partition_by=partition_by)
+        return cls.with_actions(add_actions + [commit])
+
+    @classmethod
+    def OverwriteTable(
+        cls,
+        partition_by: list,
+        existing_add_actions: Iterable[Add],
+        add_actions: list[Add]
+    ) -> "DeltaLogEntry":
+        commit = TableCommitWrite.with_parms(utils.timestamp(), mode=WriteMode.overwrite.value, partition_by=partition_by)
+        remove_actions = generate_remove_acctions(existing_add_actions)
+        return cls.with_actions([*remove_actions, *add_actions, commit])
 
 def resolve_add_actions(versioned_log_entries: dict[int, DeltaLogEntry]) -> dict[str, Add]:
     adds = dict()

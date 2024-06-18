@@ -1,8 +1,6 @@
 import os
-from enum import Enum
 from uuid import uuid4
 from urllib.parse import urlparse
-from typing import Iterable
 
 import fsspec
 import pyarrow as pa
@@ -10,13 +8,6 @@ import pyarrow.dataset
 import pyarrow.parquet
 
 from xdlake import delta_log, utils
-
-
-class WriteMode(Enum):
-    append = "Append"
-    overwrite = "Overwrite"
-    error = "Error"
-    ignore = "Ignore"
 
 
 class StorageLocation:
@@ -121,37 +112,6 @@ class Writer:
 
         return add_actions
 
-    def _new_table_log_entry(self, schema: delta_log.Schema, partition_by: list, add_actions: list[delta_log.Add]) -> delta_log.DeltaLogEntry:
-        log = delta_log.DeltaLogEntry()
-        protocol = delta_log.Protocol()
-        table_metadata = delta_log.TableMetadata(schemaString=schema.json(), partitionColumns=partition_by)
-        log.actions.append(protocol)
-        log.actions.append(table_metadata)
-        log.actions.extend(add_actions)
-        log.actions.append(delta_log.TableCommitCreate.with_parms(self.loc.path, utils.timestamp(), table_metadata, protocol))
-        return log
-
-    def _append_log_entry(self, partition_by: list, add_actions: list[delta_log.Add]) -> delta_log.DeltaLogEntry:
-        mode = WriteMode.append.value
-        log = delta_log.DeltaLogEntry()
-        log.actions.extend(add_actions)
-        log.actions.append(delta_log.TableCommitWrite.with_parms(utils.timestamp(), mode=mode, partition_by=partition_by))
-        return log
-
-    def _overwrite_log_entry(
-        self,
-        partition_by: list,
-        existing_add_actions: Iterable[delta_log.Add],
-        add_actions: list[delta_log.Add]
-    ) -> delta_log.DeltaLogEntry:
-        mode = WriteMode.overwrite.value
-        log = delta_log.DeltaLogEntry()
-        remove_actions = delta_log.generate_remove_acctions(existing_add_actions)
-        log.actions.extend(remove_actions)
-        log.actions.extend(add_actions)
-        log.actions.append(delta_log.TableCommitWrite.with_parms(utils.timestamp(), mode=mode, partition_by=partition_by))
-        return log
-
     def write(
         self,
         df: pa.Table,
@@ -177,13 +137,13 @@ class Writer:
 
         dlog = delta_log.DeltaLogEntry()
         if 0 == new_table_version:
-            dlog = self._new_table_log_entry(schema_info, partition_by, new_add_actions)
+            dlog = delta_log.DeltaLogEntry.CreateTable(self.loc.path, schema_info, partition_by, new_add_actions)
             self.loc.fs.mkdir(os.path.join(self.loc.path, "_delta_log"))
-        elif WriteMode.append == WriteMode[mode]:
-            dlog = self._append_log_entry(partition_by, new_add_actions)
-        elif WriteMode.overwrite == WriteMode[mode]:
+        elif delta_log.WriteMode.append == delta_log.WriteMode[mode]:
+            dlog = delta_log.DeltaLogEntry.AppendTable(partition_by, new_add_actions)
+        elif delta_log.WriteMode.overwrite == delta_log.WriteMode[mode]:
             existing_add_actions = delta_log.resolve_add_actions(versioned_log_entries).values()
-            dlog = self._overwrite_log_entry(partition_by, existing_add_actions, new_add_actions)
+            dlog = delta_log.DeltaLogEntry.OverwriteTable(partition_by, existing_add_actions, new_add_actions)
 
         with self.loc.open(self.loc.append_path("_delta_log", f"{new_table_version:020}.json"), "w") as fh:
             dlog.write(fh)

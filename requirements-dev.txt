@@ -1,4 +1,5 @@
 pandas
 deltalake
 ruff-lsp
+mypy
 -r requirements.txt
