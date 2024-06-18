@@ -28,10 +28,14 @@ class Writer:
     def __init__(
         self,
         loc: str | storage.Location | storage.LocatedFS,
+        log_loc: str | storage.Location | storage.LocatedFS | None = None,
         storage_options: dict | None = None,
     ):
         self.lfs = storage.LocatedFS.resolve(loc, storage_options)
-        self.log_lfs = self.lfs.append_path("_delta_log")
+        if log_loc is None:
+            self.log_lfs = self.lfs.append_path("_delta_log")
+        else:
+            self.log_lfs = storage.LocatedFS.resolve(log_loc, storage_options)
 
     def write_data(self, table: pa.Table, version: int, **write_kwargs) -> list[delta_log.Add]:
         add_actions = list()
@@ -117,10 +121,14 @@ class DeltaTable:
     def __init__(
         self,
         loc: str | storage.Location | storage.LocatedFS,
+        log_loc: str | storage.Location | storage.LocatedFS | None = None,
         storage_options: dict | None = None,
     ):
         self.lfs = storage.LocatedFS.resolve(loc, storage_options)
-        self.log_lfs = self.lfs.append_path("_delta_log")
+        if log_loc is None:
+            self.log_lfs = self.lfs.append_path("_delta_log")
+        else:
+            self.log_lfs = storage.LocatedFS.resolve(log_loc, storage_options)
         self.log = read_versioned_log_entries(self.log_lfs)
         self.adds = delta_log.resolve_add_actions(self.log)
 

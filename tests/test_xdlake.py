@@ -58,6 +58,25 @@ class TestXdLake(unittest.TestCase):
             df = xdlake.DeltaTable(test_dir).to_pyarrow_dataset().to_table()
             _assert_arrow_table_equal(df_expected, df)
 
+    def test_remote_log(self):
+        tables = [next(self.table_gen) for _ in range(3)]
+        expected = pyarrow.concat_tables(tables)
+        tests = [
+            (f"s3://test-xdlake/tests/{uuid4()}", f"testdl/{uuid4()}"),
+            (f"testdl/{uuid4()}", f"s3://test-xdlake/tests/{uuid4()}"),
+        ]
+        for data_loc, log_loc in tests:
+            with self.subTest(data_loc=data_loc, log_loc=log_loc):
+                writer = xdlake.Writer(data_loc, log_loc)
+
+                for t in tables:
+                    writer.write(t)
+
+                _assert_arrow_table_equal(
+                    expected,
+                    xdlake.DeltaTable(data_loc, log_loc).to_pyarrow_dataset().to_table(),
+                )
+
     def test_write_mode_error_ignore(self):
         test_dir = f"testdl/{uuid4()}"
         writer = xdlake.Writer(test_dir)
