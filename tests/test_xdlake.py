@@ -59,6 +59,23 @@ class TestXdLake(unittest.TestCase):
             df = xdlake.DeltaTable(test_dir).to_pyarrow_dataset().to_table()
             _assert_arrow_table_equal(df_expected, df)
 
+    def test_write_mode_error_ignore(self):
+        test_dir = f"testdl/{uuid4()}"
+        writer = xdlake.Writer(test_dir)
+        expected = next(self.table_gen)
+        writer.write(expected)
+
+        with self.subTest("should raise FileExistsError"):
+            with self.assertRaises(FileExistsError):
+                writer.write(next(self.table_gen), mode="error")
+            df = xdlake.DeltaTable(test_dir).to_pyarrow_dataset().to_table()
+            _assert_arrow_table_equal(expected, df)
+
+        with self.subTest("should not write to table, and not raise"):
+            writer.write(next(self.table_gen), mode="ignore")
+            df = xdlake.DeltaTable(test_dir).to_pyarrow_dataset().to_table()
+            _assert_arrow_table_equal(expected, df)
+
     def test_xdlake_s3(self):
         test_dir = f"s3://test-xdlake/tests/{uuid4()}"
         writer = xdlake.Writer(test_dir)

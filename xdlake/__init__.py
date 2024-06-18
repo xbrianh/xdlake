@@ -115,16 +115,21 @@ class Writer:
     def write(
         self,
         df: pa.Table,
-        mode: str = "append",
+        mode: str = delta_log.WriteMode.append.name,
         partition_by: list | None = None,
         storage_options: dict | None = None,
     ):
+        mode = delta_log.WriteMode[mode]
         schema_info = delta_log.Schema.from_pyarrow_table(df)
         versioned_log_entries = read_versioned_log_entries(self.loc)
         if not versioned_log_entries:
             new_table_version = 0
         else:
             new_table_version = 1 + max(versioned_log_entries.keys())
+            if delta_log.WriteMode.error == mode:
+                raise FileExistsError(f"Table already exists at version {new_table_version - 1}")
+            elif delta_log.WriteMode.ignore == mode:
+                return
 
         write_kwargs: dict = dict()
         if partition_by is not None:
