@@ -15,14 +15,13 @@ class TestStorage(unittest.TestCase):
             ("s3://test-xdlake/tests", f"s3://test-xdlake/tests/foo/{name}"), 
         ]
         for url, expected_path in tests:
-            loc = storage.Location.with_loc(url)
-            fs = storage.get_filesystem(loc.scheme)
-            new_loc = loc.append_path("foo", name)
+            lfs = storage.LocatedFS.resolve(url)
+            new_loc = lfs.append_path("foo", name)
             self.assertEqual(new_loc.path, expected_path)
             d = os.urandom(8)
-            with storage.open(new_loc, fs, mode="wb") as fh:
+            with storage.open(new_loc, mode="wb") as fh:
                 fh.write(d)
-            with storage.open(new_loc, fs, mode="rb") as fh:
+            with storage.open(new_loc, mode="rb") as fh:
                 self.assertEqual(fh.read(), d)
 
 

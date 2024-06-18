@@ -1,6 +1,6 @@
 import os
 from urllib.parse import urlparse
-from typing import Any
+from typing import Any, NamedTuple
 
 import fsspec
 
@@ -51,19 +51,43 @@ class Location:
 def get_filesystem(scheme: str, storage_options: dict | None = None) -> fsspec.AbstractFileSystem:
     return fsspec.filesystem(scheme, **(storage_options or dict()))
 
-def list_files_sorted(loc: str | Location, fs: fsspec.AbstractFileSystem) -> list["Location"]:
-    loc = Location.with_loc(loc)
-    paths = sorted([info["name"] for info in fs.ls(loc.path, detail=True)
-                    if "file" == info["type"]])
-    return [Location(loc.scheme, path) for path in paths]
+class LocatedFS(NamedTuple):
+    loc: Location
+    fs: fsspec.AbstractFileSystem
 
-def open(loc: Location | str, fs: fsspec.AbstractFileSystem, mode: str="r") -> fsspec.core.OpenFile:
-    loc = Location.with_loc(loc)
-    if "file" == loc.scheme and "w" in mode:
-        folder = loc.dirname()
-        if fs.exists(folder):
-            if not fs.isdir(folder):
-                raise FileExistsError(loc.path)
+    def append_path(self, *path_components):
+        return type(self)(self.loc.append_path(*path_components), self.fs)
+
+    @property
+    def path(self):
+        return self.loc.path
+
+    def exists(self) -> bool:
+        return self.fs.exists(self.path)
+
+    def mkdir(self):
+        self.fs.mkdir(self.path)
+
+    @classmethod
+    def resolve(cls, loc, storage_options: dict | None = None) -> "LocatedFS":
+        if isinstance(loc, cls):
+            return loc
         else:
-            fs.mkdir(folder)
-    return fs.open(loc.path, mode)
+            loc = Location.with_loc(loc)
+            fs = get_filesystem(loc.scheme, storage_options)
+        return cls(loc, fs)
+
+def list_files_sorted(locfs: LocatedFS) -> list[LocatedFS]:
+    paths = sorted([info["name"] for info in locfs.fs.ls(locfs.loc.path, detail=True)
+                    if "file" == info["type"]])
+    return [LocatedFS(Location(locfs.loc.scheme, path), locfs.fs) for path in paths]
+
+def open(locfs: LocatedFS, mode: str="r") -> fsspec.core.OpenFile:
+    if "file" == locfs.loc.scheme and "w" in mode:
+        folder = locfs.loc.dirname()
+        if locfs.fs.exists(folder):
+            if not locfs.fs.isdir(folder):
+                raise FileExistsError(locfs.loc.path)
+        else:
+            locfs.fs.mkdir(folder)
+    return locfs.fs.open(locfs.loc.path, mode)
