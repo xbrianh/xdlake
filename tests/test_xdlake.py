@@ -75,16 +75,18 @@ class TestXdLake(unittest.TestCase):
             df = xdlake.DeltaTable(test_dir).to_pyarrow_dataset().to_table()
             _assert_arrow_table_equal(expected, df)
 
-    def test_xdlake_s3(self):
-        test_dir = f"s3://test-xdlake/tests/{uuid4()}"
-        writer = xdlake.Writer(test_dir)
+    def test_s3(self):
+        loc = f"s3://test-xdlake/tests/{uuid4()}"
+        writer = xdlake.Writer(loc)
+        tables = [next(self.table_gen) for _ in range(3)]
 
-        for _ in range(4):
-            t = next(self.table_gen)
+        for t in tables:
             writer.write(t, partition_by=["cats"])
 
-        # t = deltalake.DeltaTable("testdl")
-        # t.to_pandas()
+        _assert_arrow_table_equal(
+            pyarrow.concat_tables(tables),
+            xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table()
+        )
 
     def write_deltalake(self):
         test_dir = "tdl"

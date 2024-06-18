@@ -131,9 +131,10 @@ class DeltaTable:
         return max(self.log.keys())
 
     def to_pyarrow_dataset(self):
-        paths = [self.lfs.loc.append_path(path).path for path in self.adds]
+        paths = [self.lfs.append_path(path).path for path in self.adds]
         return pyarrow.dataset.dataset(
             paths,
             format="parquet",
             partitioning="hive",
+            filesystem=self.lfs.fs,
         )
