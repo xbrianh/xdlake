@@ -110,11 +110,10 @@ class TestXdLake(unittest.TestCase):
         shutil.rmtree(test_dir, ignore_errors=True)
 
         for _ in range(1):
-            t = next(self.table_gen)
-            deltalake.write_deltalake("tdl", t, mode="append")
+            deltalake.write_deltalake("tdl", next(self.table_gen), mode="append")
 
         for _ in range(1):
-            deltalake.write_deltalake("tdl", t, mode="overwrite")
+            deltalake.write_deltalake("tdl", next(self.table_gen), mode="overwrite")
 
     def test_foo(self):
         a = deltalake.DeltaTable("tdl").to_pyarrow_dataset().to_table().to_pandas()
