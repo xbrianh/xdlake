@@ -115,11 +115,11 @@ class Writer:
     def write(
         self,
         df: pa.Table,
-        mode: str = delta_log.WriteMode.append.name,
+        mode: str | delta_log.WriteMode = delta_log.WriteMode.append.name,
         partition_by: list | None = None,
         storage_options: dict | None = None,
     ):
-        mode = delta_log.WriteMode[mode]
+        mode = delta_log.WriteMode[mode] if isinstance(mode, str) else mode
         schema_info = delta_log.Schema.from_pyarrow_table(df)
         versioned_log_entries = read_versioned_log_entries(self.loc)
         if not versioned_log_entries:
@@ -144,9 +144,9 @@ class Writer:
         if 0 == new_table_version:
             dlog = delta_log.DeltaLogEntry.CreateTable(self.loc.path, schema_info, partition_by, new_add_actions)
             self.loc.fs.mkdir(os.path.join(self.loc.path, "_delta_log"))
-        elif delta_log.WriteMode.append == delta_log.WriteMode[mode]:
+        elif delta_log.WriteMode.append == mode:
             dlog = delta_log.DeltaLogEntry.AppendTable(partition_by, new_add_actions)
-        elif delta_log.WriteMode.overwrite == delta_log.WriteMode[mode]:
+        elif delta_log.WriteMode.overwrite == mode:
             existing_add_actions = delta_log.resolve_add_actions(versioned_log_entries).values()
             dlog = delta_log.DeltaLogEntry.OverwriteTable(partition_by, existing_add_actions, new_add_actions)
 
