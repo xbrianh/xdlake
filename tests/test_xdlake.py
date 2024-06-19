@@ -11,23 +11,28 @@ from pandas.testing import assert_frame_equal
 import xdlake
 
 
-def pyarrow_table_gen() -> pyarrow.Table:
-    order_parm = 0
-    while True:
-        cats = ["S", "A", "D"]
-        bats = ["F", "G", "H"]
+class TableGen:
+    def __init__(self, columns=["bob", "sue", "george", "rebecca", "morgain"]):
+        self.columns = columns
+        self.categoricals = {
+            "cats": ["S", "A", "D"],
+            "bats": ["F", "G", "H"],
+        }
+        self.order_parm = 0
+
+    def __next__(self) -> pyarrow.Table:
         t = pyarrow.table(
-            [np.random.random(11) for _ in range(5)],
-            names = ["bob", "sue", "george", "rebecca", "morgain"],
+            [np.random.random(11) for _ in range(len(self.columns))],
+            names = self.columns,
         )
 
-        order = [float(i) + order_parm for i in range(len(t))]
-        order_parm += len(t)
+        order = [float(i) + self.order_parm for i in range(len(t))]
+        self.order_parm += len(t)
 
-        t = t.append_column("cats", [random.choice(cats) for _ in range(len(t))])
-        t = t.append_column("bats", [random.choice(bats) for _ in range(len(t))])
+        for name, choices in self.categoricals.items():
+            t = t.append_column(name, [random.choice(choices) for _ in range(len(t))])
         t = t.append_column("order", pyarrow.array(order, pyarrow.float64()))
-        yield t
+        return t
 
 def _assert_arrow_table_equal(a, b):
     a = a.to_pandas().sort_values("order").sort_index(axis=1).reset_index(drop=True)
@@ -36,7 +41,7 @@ def _assert_arrow_table_equal(a, b):
 
 class TestXdLake(unittest.TestCase):
     def setUp(self):
-        self.table_gen = pyarrow_table_gen()
+        self.table_gen = TableGen()
 
     def test_xdlake(self):
         loc = f"testdl/{uuid4()}"
