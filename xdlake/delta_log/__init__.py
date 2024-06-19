@@ -45,8 +45,21 @@ class TableFormat(_DeltaLogAction):
     options: dict = field(default_factory=lambda: dict())
 
 @dataclass
+class Schema(_DeltaLogAction):
+    fields: list[dict]
+    type: str = "struct"
+
+    @classmethod
+    def from_pyarrow_table(cls, t: pa.Table) -> "Schema":
+        fields = [
+            SchemaField(f.name, _data_type_from_arrow(f.type), f.nullable, f.metadata or {}).asdict()
+            for f in t.schema
+        ]
+        return cls(fields=fields)
+
+@dataclass
 class TableMetadata(_DeltaLogAction):
-    schemaString: dict
+    schemaString: str
     createdTime: int = field(default_factory=lambda: utils.timestamp())
     id: str = field(default_factory=lambda: f"{uuid4()}")
     name: str | None = None
@@ -54,6 +67,10 @@ class TableMetadata(_DeltaLogAction):
     format: dict = field(default_factory=lambda: TableFormat().asdict())
     partitionColumns: list[str] = field(default_factory=lambda: list())
     configuration: dict = field(default_factory=lambda: dict())
+
+    @property
+    def schema(self) -> Schema:
+        return Schema(**json.loads(self.schemaString))
 
 class TableOperationParm:
     METADATA = "metadata"
@@ -115,19 +132,6 @@ def _data_type_from_arrow(_t):
     if _t not in arrow_to_delta_type_map:
         raise TypeError(f"Cannot handle arrow type '{_t}', type={type(_t)}")
     return arrow_to_delta_type_map[_t]
-
-@dataclass
-class Schema(_DeltaLogAction):
-    fields: list[dict]
-    type: str = "struct"
-
-    @classmethod
-    def from_pyarrow_table(cls, t: pa.Table) -> "Schema":
-        fields = [
-            SchemaField(f.name, _data_type_from_arrow(f.type), f.nullable, f.metadata or {}).asdict()
-            for f in t.schema
-        ]
-        return cls(fields=fields)
 
 @dataclass
 class Statistics(_DeltaLogAction):
@@ -271,6 +275,13 @@ class DeltaLogEntry:
         commit = TableCommitWrite.with_parms(utils.timestamp(), mode=WriteMode.overwrite.value, partition_by=partition_by)
         remove_actions = generate_remove_acctions(existing_add_actions)
         return cls.with_actions([*remove_actions, *add_actions, commit])
+
+def resolve_schema(versioned_log_entries: dict[int, DeltaLogEntry]) -> Schema:
+    for log in versioned_log_entries.values():
+        for a in log.actions:
+            if isinstance(a, TableMetadata):
+                return a.schema
+    raise RuntimeError("No schema found in log entries")
 
 def resolve_add_actions(versioned_log_entries: dict[int, DeltaLogEntry]) -> dict[str, Add]:
     adds = dict()

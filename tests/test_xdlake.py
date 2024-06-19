@@ -63,6 +63,18 @@ class TestXdLake(unittest.TestCase):
             df = xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table()
             _assert_arrow_table_equal(df_expected, df)
 
+    def test_schema_change(self):
+        loc = f"testdl/{uuid4()}"
+        writer = xdlake.Writer(loc)
+
+        for _ in range(2):
+            t = next(self.table_gen)
+            writer.write(t, mode="append")
+
+        self.table_gen.columns.append("new_column")
+        with self.assertRaises(ValueError):
+            writer.write(next(self.table_gen), mode="append")
+
     def test_remote_log(self):
         tables = [next(self.table_gen) for _ in range(3)]
         expected = pyarrow.concat_tables(tables)

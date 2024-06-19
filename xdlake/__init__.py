@@ -84,7 +84,7 @@ class Writer:
         storage_options: dict | None = None,
     ):
         mode = delta_log.WriteMode[mode] if isinstance(mode, str) else mode
-        schema_info = delta_log.Schema.from_pyarrow_table(df)
+        schema = delta_log.Schema.from_pyarrow_table(df)
         versioned_log_entries = read_versioned_log_entries(self.log_lfs)
         if not versioned_log_entries:
             new_table_version = 0
@@ -94,6 +94,9 @@ class Writer:
                 raise FileExistsError(f"Table already exists at version {new_table_version - 1}")
             elif delta_log.WriteMode.ignore == mode:
                 return
+            existing_schema = delta_log.resolve_schema(versioned_log_entries)
+            if existing_schema != schema:
+                raise ValueError("Schema mismatch")
 
         write_kwargs: dict = dict()
         if partition_by is not None:
@@ -106,7 +109,7 @@ class Writer:
 
         dlog = delta_log.DeltaLogEntry()
         if 0 == new_table_version:
-            dlog = delta_log.DeltaLogEntry.CreateTable(self.log_lfs.path, schema_info, partition_by, new_add_actions)
+            dlog = delta_log.DeltaLogEntry.CreateTable(self.log_lfs.path, schema, partition_by, new_add_actions)
             self.log_lfs.mkdir()
         elif delta_log.WriteMode.append == mode:
             dlog = delta_log.DeltaLogEntry.AppendTable(partition_by, new_add_actions)
