@@ -39,23 +39,23 @@ class TestXdLake(unittest.TestCase):
         self.table_gen = pyarrow_table_gen()
 
     def test_xdlake(self):
-        test_dir = f"testdl/{uuid4()}"
-        writer = xdlake.Writer(test_dir)
+        loc = f"testdl/{uuid4()}"
+        writer = xdlake.Writer(loc)
 
         for _ in range(3):
             t = next(self.table_gen)
             writer.write(t, partition_by=["cats", "bats"])
 
         with self.subTest("should aggree", mode="append"):
-            df_expected = deltalake.DeltaTable(test_dir)
-            df = xdlake.DeltaTable(test_dir).to_pyarrow_dataset().to_table()
+            df_expected = deltalake.DeltaTable(loc)
+            df = xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table()
             _assert_arrow_table_equal(df_expected, df)
 
         with self.subTest("should aggree", mode="overwrite"):
             t = next(self.table_gen)
             writer.write(t, partition_by=["cats", "bats"], mode="overwrite")
-            df_expected = deltalake.DeltaTable(test_dir)
-            df = xdlake.DeltaTable(test_dir).to_pyarrow_dataset().to_table()
+            df_expected = deltalake.DeltaTable(loc)
+            df = xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table()
             _assert_arrow_table_equal(df_expected, df)
 
     def test_remote_log(self):
@@ -78,20 +78,20 @@ class TestXdLake(unittest.TestCase):
                 )
 
     def test_write_mode_error_ignore(self):
-        test_dir = f"testdl/{uuid4()}"
-        writer = xdlake.Writer(test_dir)
+        loc = f"testdl/{uuid4()}"
+        writer = xdlake.Writer(loc)
         expected = next(self.table_gen)
         writer.write(expected)
 
         with self.subTest("should raise FileExistsError"):
             with self.assertRaises(FileExistsError):
                 writer.write(next(self.table_gen), mode="error")
-            df = xdlake.DeltaTable(test_dir).to_pyarrow_dataset().to_table()
+            df = xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table()
             _assert_arrow_table_equal(expected, df)
 
         with self.subTest("should not write to table, and not raise"):
             writer.write(next(self.table_gen), mode="ignore")
-            df = xdlake.DeltaTable(test_dir).to_pyarrow_dataset().to_table()
+            df = xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table()
             _assert_arrow_table_equal(expected, df)
 
     def test_s3(self):
@@ -108,8 +108,8 @@ class TestXdLake(unittest.TestCase):
         )
 
     def write_deltalake(self):
-        test_dir = "tdl"
-        shutil.rmtree(test_dir, ignore_errors=True)
+        loc = "tdl"
+        shutil.rmtree(loc, ignore_errors=True)
 
         for _ in range(1):
             deltalake.write_deltalake("tdl", next(self.table_gen), mode="append")
