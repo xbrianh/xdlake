@@ -80,11 +80,14 @@ class Writer:
         self,
         df: pa.Table,
         mode: str | delta_log.WriteMode = delta_log.WriteMode.append.name,
+        schema_mode: str = "overwrite",
         partition_by: list | None = None,
         storage_options: dict | None = None,
     ):
+        # TODO refactor this method, shit's getting complicated
         mode = delta_log.WriteMode[mode] if isinstance(mode, str) else mode
-        schema = delta_log.Schema.from_pyarrow_table(df)
+        schema = delta_log.Schema.from_pyarrow_schema(df.schema)
+        merged_schema: delta_log.Schema | None = None
         dlog = read_delta_log(self.log_so)
         if not dlog.entries:
             new_table_version = 0
@@ -95,8 +98,11 @@ class Writer:
             elif delta_log.WriteMode.ignore == mode:
                 return
             existing_schema = dlog.resolve_schema()
-            if existing_schema != schema:
-                raise ValueError("Schema mismatch")
+            if delta_log.WriteMode.append == mode:
+                if "merge" == schema_mode:
+                    merged_schema = existing_schema.merge(schema)
+                elif existing_schema != schema:
+                    raise ValueError("Schema mismatch")
 
         write_kwargs: dict = dict()
         if partition_by is not None:
@@ -112,7 +118,7 @@ class Writer:
             new_entry = delta_log.DeltaLogEntry.CreateTable(self.log_so.path, schema, partition_by, new_add_actions)
             self.log_so.mkdir()
         elif delta_log.WriteMode.append == mode:
-            new_entry = delta_log.DeltaLogEntry.AppendTable(partition_by, new_add_actions)
+            new_entry = delta_log.DeltaLogEntry.AppendTable(partition_by, new_add_actions, merged_schema)
         elif delta_log.WriteMode.overwrite == mode:
             existing_add_actions = dlog.resolve_add_actions().values()
             new_entry = delta_log.DeltaLogEntry.OverwriteTable(partition_by, existing_add_actions, new_add_actions)
@@ -148,4 +154,5 @@ class DeltaTable:
             format="parquet",
             partitioning="hive",
             filesystem=self.so.fs,
+            schema=self.dlog.resolve_schema().to_pyarrow_schema(),
         )

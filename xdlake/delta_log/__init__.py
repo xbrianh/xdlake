@@ -44,18 +44,42 @@ class TableFormat(_DeltaLogAction):
     provider: str = "parquet"
     options: dict = field(default_factory=lambda: dict())
 
+arrow_to_delta_type = {
+    pa.int64(): "long",
+    pa.float64(): "double",
+    pa.string(): "string",
+}
+
+@dataclass
+class SchemaField(_DeltaLogAction):
+    name: str
+    type: str
+    nullable: bool
+    metadata: dict
+
 @dataclass
 class Schema(_DeltaLogAction):
     fields: list[dict]
     type: str = "struct"
 
     @classmethod
-    def from_pyarrow_table(cls, t: pa.Table) -> "Schema":
+    def from_pyarrow_schema(cls, schema: pa.Schema) -> "Schema":
         fields = [
             SchemaField(f.name, _data_type_from_arrow(f.type), f.nullable, f.metadata or {}).asdict()
-            for f in t.schema
+            for f in schema
         ]
         return cls(fields=fields)
+
+    def to_pyarrow_schema(self):
+        delta_to_arrow_type = {v: k for k, v in arrow_to_delta_type.items()}
+        pairs = [(f["name"], delta_to_arrow_type[f["type"]]) for f in self.fields]
+        return pa.schema(pairs)
+
+    def merge(self, other) -> "Schema":
+        a = self.to_pyarrow_schema()
+        b = other.to_pyarrow_schema()
+        merged_schema = pa.unify_schemas([a, b])
+        return type(self).from_pyarrow_schema(merged_schema)
 
 @dataclass
 class TableMetadata(_DeltaLogAction):
@@ -115,23 +139,10 @@ class TableCommitWrite(_DeltaLogAction):
         }
         return cls(timestamp=timestamp, operationParameters=op_parms)
 
-@dataclass
-class SchemaField(_DeltaLogAction):
-    name: str
-    type: str
-    nullable: bool
-    metadata: dict
-
-arrow_to_delta_type_map = {
-    pa.int64(): "long",
-    pa.float64(): "double",
-    pa.string(): "string",
-}
-
 def _data_type_from_arrow(_t):
-    if _t not in arrow_to_delta_type_map:
+    if _t not in arrow_to_delta_type:
         raise TypeError(f"Cannot handle arrow type '{_t}', type={type(_t)}")
-    return arrow_to_delta_type_map[_t]
+    return arrow_to_delta_type[_t]
 
 @dataclass
 class Statistics(_DeltaLogAction):
@@ -261,9 +272,13 @@ class DeltaLogEntry:
         return cls.with_actions([protocol, table_metadata, *add_actions, commit])
 
     @classmethod
-    def AppendTable(cls, partition_by: list, add_actions: list[Add]) -> "DeltaLogEntry":
+    def AppendTable(cls, partition_by: list, add_actions: list[Add], schema: Schema | None = None) -> "DeltaLogEntry":
         commit = TableCommitWrite.with_parms(utils.timestamp(), mode=WriteMode.append.value, partition_by=partition_by)
-        return cls.with_actions(add_actions + [commit])
+        actions = add_actions + [commit]
+        if schema is not None:
+            table_metadata = TableMetadata(schemaString=schema.json(), partitionColumns=partition_by)
+            actions = [table_metadata] + actions
+        return cls.with_actions(actions)
 
     @classmethod
     def OverwriteTable(

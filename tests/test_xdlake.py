@@ -1,4 +1,5 @@
 import random
+import shutil
 import unittest
 from uuid import uuid4
 
@@ -64,15 +65,32 @@ class TestXdLake(unittest.TestCase):
 
     def test_schema_change(self):
         loc = f"testdl/{uuid4()}"
+        dl_loc = f"testdl/{uuid4()}"
         writer = xdlake.Writer(loc)
 
-        for _ in range(2):
-            t = next(self.table_gen)
+        tables = [next(self.table_gen) for _ in range(2)]
+        self.table_gen.columns.append("new_column")
+        table_new_schema = next(self.table_gen)
+
+        for t in tables:
             writer.write(t, mode="append")
 
-        self.table_gen.columns.append("new_column")
-        with self.assertRaises(ValueError):
-            writer.write(next(self.table_gen), mode="append")
+        with self.subTest("should raise"):
+            with self.assertRaises(ValueError):
+                writer.write(table_new_schema, mode="append")
+
+        with self.subTest("should raise"):
+            writer.write(table_new_schema, mode="append", schema_mode="merge")
+
+        shutil.rmtree(dl_loc, ignore_errors=True)
+        for t in tables:
+            deltalake.write_deltalake(dl_loc, t, mode="append")
+        deltalake.write_deltalake(dl_loc, table_new_schema, mode="append", schema_mode="merge", engine="rust")
+
+        _assert_arrow_table_equal(
+            deltalake.DeltaTable(dl_loc).to_pyarrow_table(),
+            xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table(),
+        )
 
     def test_remote_log(self):
         tables = [next(self.table_gen) for _ in range(3)]
