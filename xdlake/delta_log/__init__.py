@@ -277,8 +277,8 @@ class DeltaLogEntry:
         return cls.with_actions([*remove_actions, *add_actions, commit])
 
 def resolve_schema(versioned_log_entries: dict[int, DeltaLogEntry]) -> Schema:
-    for log in versioned_log_entries.values():
-        for a in log.actions:
+    for v in sorted(versioned_log_entries.keys(), reverse=True):
+        for a in versioned_log_entries[v].actions:
             if isinstance(a, TableMetadata):
                 return a.schema
     raise RuntimeError("No schema found in log entries")
