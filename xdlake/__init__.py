@@ -7,22 +7,22 @@ import pyarrow.parquet
 from xdlake import storage, delta_log, utils
 
 
-def read_versioned_log_entries(
+def read_delta_log(
     loc: str | storage.Location | storage.LocatedFS,
     version: int | None = None,
     storage_options: dict | None = None,
-) -> dict[int, delta_log.DeltaLogEntry]:
+) -> delta_log.DeltaLog:
     lfs = storage.LocatedFS.resolve(loc, storage_options)
+    dlog = delta_log.DeltaLog()
     if not lfs.exists():
-        return {}
-    versioned_log_entries = dict()
+        return dlog
     for entry_lfs in storage.list_files_sorted(lfs):
         entry_version = int(entry_lfs.loc.basename().split(".")[0])
         with storage.open(entry_lfs) as fh:
-            versioned_log_entries[entry_version] = delta_log.DeltaLogEntry(fh)
-        if version in versioned_log_entries:
+            dlog[entry_version] = delta_log.DeltaLogEntry(fh)
+        if version in dlog:
             break
-    return versioned_log_entries
+    return dlog
 
 class Writer:
     def __init__(
@@ -85,16 +85,16 @@ class Writer:
     ):
         mode = delta_log.WriteMode[mode] if isinstance(mode, str) else mode
         schema = delta_log.Schema.from_pyarrow_table(df)
-        versioned_log_entries = read_versioned_log_entries(self.log_lfs)
-        if not versioned_log_entries:
+        dlog = read_delta_log(self.log_lfs)
+        if not dlog.entries:
             new_table_version = 0
         else:
-            new_table_version = 1 + max(versioned_log_entries.keys())
+            new_table_version = 1 + max(dlog.entries.keys())
             if delta_log.WriteMode.error == mode:
                 raise FileExistsError(f"Table already exists at version {new_table_version - 1}")
             elif delta_log.WriteMode.ignore == mode:
                 return
-            existing_schema = delta_log.resolve_schema(versioned_log_entries)
+            existing_schema = dlog.resolve_schema()
             if existing_schema != schema:
                 raise ValueError("Schema mismatch")
 
@@ -107,18 +107,18 @@ class Writer:
 
         new_add_actions = self.write_data(df, new_table_version, **write_kwargs)
 
-        dlog = delta_log.DeltaLogEntry()
+        new_entry = delta_log.DeltaLogEntry()
         if 0 == new_table_version:
-            dlog = delta_log.DeltaLogEntry.CreateTable(self.log_lfs.path, schema, partition_by, new_add_actions)
+            new_entry = delta_log.DeltaLogEntry.CreateTable(self.log_lfs.path, schema, partition_by, new_add_actions)
             self.log_lfs.mkdir()
         elif delta_log.WriteMode.append == mode:
-            dlog = delta_log.DeltaLogEntry.AppendTable(partition_by, new_add_actions)
+            new_entry = delta_log.DeltaLogEntry.AppendTable(partition_by, new_add_actions)
         elif delta_log.WriteMode.overwrite == mode:
-            existing_add_actions = delta_log.resolve_add_actions(versioned_log_entries).values()
-            dlog = delta_log.DeltaLogEntry.OverwriteTable(partition_by, existing_add_actions, new_add_actions)
+            existing_add_actions = dlog.resolve_add_actions().values()
+            new_entry = delta_log.DeltaLogEntry.OverwriteTable(partition_by, existing_add_actions, new_add_actions)
 
         with storage.open(self.log_lfs.append_path(f"{new_table_version:020}.json"), "w") as fh:
-            dlog.write(fh)
+            new_entry.write(fh)
 
 class DeltaTable:
     def __init__(
@@ -132,14 +132,14 @@ class DeltaTable:
             self.log_lfs = self.lfs.append_path("_delta_log")
         else:
             self.log_lfs = storage.LocatedFS.resolve(log_loc, storage_options)
-        self.log = read_versioned_log_entries(self.log_lfs)
-        self.adds = delta_log.resolve_add_actions(self.log)
+        self.dlog = read_delta_log(self.log_lfs)
+        self.adds = self.dlog.resolve_add_actions()
 
     @property
     def version(self) -> int:
-        if not self.log:
+        if not self.dlog:
             return -1
-        return max(self.log.keys())
+        return max(self.dlog.entries.keys())
 
     def to_pyarrow_dataset(self):
         paths = [self.lfs.append_path(path).path for path in self.adds]

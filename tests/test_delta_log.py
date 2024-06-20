@@ -30,8 +30,8 @@ class TestDeltaLog(unittest.TestCase):
             ],
             type="struct",
         )
-        vle = xdlake.read_versioned_log_entries(logdir)
-        s = delta_log.resolve_schema(vle)
+        dlog = xdlake.read_delta_log(logdir)
+        s = dlog.resolve_schema()
         self.assertEqual(s, expected)
 
 

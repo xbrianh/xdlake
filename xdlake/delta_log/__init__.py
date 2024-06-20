@@ -276,21 +276,39 @@ class DeltaLogEntry:
         remove_actions = generate_remove_acctions(existing_add_actions)
         return cls.with_actions([*remove_actions, *add_actions, commit])
 
-def resolve_schema(versioned_log_entries: dict[int, DeltaLogEntry]) -> Schema:
-    for v in sorted(versioned_log_entries.keys(), reverse=True):
-        for a in versioned_log_entries[v].actions:
-            if isinstance(a, TableMetadata):
-                return a.schema
-    raise RuntimeError("No schema found in log entries")
+class DeltaLog:
+    def __init__(self):
+        self.entries = dict()
 
-def resolve_add_actions(versioned_log_entries: dict[int, DeltaLogEntry]) -> dict[str, Add]:
-    adds = dict()
-    for log in versioned_log_entries.values():
-        for add in log.add_actions():
-            adds[add.path] = add
-        for remove in log.remove_actions():
-            del adds[remove.path]
-    return adds
+    def __setitem__(self, key, val):
+        self.entries[key] = val
+
+    def __getitem__(self, key):
+        return self.entries[key]
+
+    def __contains__(self, key):
+        return key in self.entries
+
+    @property
+    def version(self):
+        return max(self.entries.keys())
+
+    def resolve_schema(self) -> Schema:
+        for v in sorted(self.entries.keys(), reverse=True):
+            for a in self.entries[v].actions:
+                if isinstance(a, TableMetadata):
+                    return a.schema
+        raise RuntimeError("No schema found in log entries")
+
+    def resolve_add_actions(self) -> dict[str, Add]:
+        adds = dict()
+        for v in sorted(self.entries.keys()):
+            entry = self.entries[v]
+            for add in entry.add_actions():
+                adds[add.path] = add
+            for remove in entry.remove_actions():
+                del adds[remove.path]
+        return adds
 
 def generate_remove_acctions(add_actions: Iterable[Add]) -> list[Remove]:
     remove_actions = list()
