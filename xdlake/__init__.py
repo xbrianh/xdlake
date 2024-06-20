@@ -8,15 +8,15 @@ from xdlake import storage, delta_log, utils
 
 
 def read_delta_log(
-    loc: str | storage.Location | storage.LocatedFS,
+    loc: str | storage.Location | storage.StorageObject,
     version: int | None = None,
     storage_options: dict | None = None,
 ) -> delta_log.DeltaLog:
-    lfs = storage.LocatedFS.resolve(loc, storage_options)
+    so = storage.StorageObject.resolve(loc, storage_options)
     dlog = delta_log.DeltaLog()
-    if not lfs.exists():
+    if not so.exists():
         return dlog
-    for entry_lfs in storage.list_files_sorted(lfs):
+    for entry_lfs in storage.list_files_sorted(so):
         entry_version = int(entry_lfs.loc.basename().split(".")[0])
         with storage.open(entry_lfs) as fh:
             dlog[entry_version] = delta_log.DeltaLogEntry(fh)
@@ -27,15 +27,15 @@ def read_delta_log(
 class Writer:
     def __init__(
         self,
-        loc: str | storage.Location | storage.LocatedFS,
-        log_loc: str | storage.Location | storage.LocatedFS | None = None,
+        loc: str | storage.Location | storage.StorageObject,
+        log_loc: str | storage.Location | storage.StorageObject | None = None,
         storage_options: dict | None = None,
     ):
-        self.lfs = storage.LocatedFS.resolve(loc, storage_options)
+        self.so = storage.StorageObject.resolve(loc, storage_options)
         if log_loc is None:
-            self.log_lfs = self.lfs.append_path("_delta_log")
+            self.log_so = self.so.append_path("_delta_log")
         else:
-            self.log_lfs = storage.LocatedFS.resolve(log_loc, storage_options)
+            self.log_so = storage.StorageObject.resolve(log_loc, storage_options)
 
     def write_data(self, table: pa.Table, version: int, **write_kwargs) -> list[delta_log.Add]:
         add_actions = list()
@@ -45,7 +45,7 @@ class Writer:
                 pyarrow.parquet.ParquetFile(visited_file.path).metadata
             )
 
-            relpath = visited_file.path.replace(self.lfs.path, "").strip("/")
+            relpath = visited_file.path.replace(self.so.path, "").strip("/")
             partition_values = dict()
 
             for part in relpath.split("/"):
@@ -57,7 +57,7 @@ class Writer:
                 delta_log.Add(
                     path=relpath,
                     modificationTime=utils.timestamp(),
-                    size=self.lfs.fs.size(visited_file.path),
+                    size=self.so.fs.size(visited_file.path),
                     stats=stats.json(),
                     partitionValues=partition_values
                 )
@@ -65,9 +65,9 @@ class Writer:
 
         pyarrow.dataset.write_dataset(
             table,
-            self.lfs.path,
+            self.so.path,
             format="parquet",
-            filesystem=self.lfs.fs,
+            filesystem=self.so.fs,
             basename_template=f"{version}-{uuid4()}-{{i}}.parquet",
             file_visitor=visitor,
             existing_data_behavior="overwrite_or_ignore",
@@ -85,7 +85,7 @@ class Writer:
     ):
         mode = delta_log.WriteMode[mode] if isinstance(mode, str) else mode
         schema = delta_log.Schema.from_pyarrow_table(df)
-        dlog = read_delta_log(self.log_lfs)
+        dlog = read_delta_log(self.log_so)
         if not dlog.entries:
             new_table_version = 0
         else:
@@ -109,30 +109,30 @@ class Writer:
 
         new_entry = delta_log.DeltaLogEntry()
         if 0 == new_table_version:
-            new_entry = delta_log.DeltaLogEntry.CreateTable(self.log_lfs.path, schema, partition_by, new_add_actions)
-            self.log_lfs.mkdir()
+            new_entry = delta_log.DeltaLogEntry.CreateTable(self.log_so.path, schema, partition_by, new_add_actions)
+            self.log_so.mkdir()
         elif delta_log.WriteMode.append == mode:
             new_entry = delta_log.DeltaLogEntry.AppendTable(partition_by, new_add_actions)
         elif delta_log.WriteMode.overwrite == mode:
             existing_add_actions = dlog.resolve_add_actions().values()
             new_entry = delta_log.DeltaLogEntry.OverwriteTable(partition_by, existing_add_actions, new_add_actions)
 
-        with storage.open(self.log_lfs.append_path(f"{new_table_version:020}.json"), "w") as fh:
+        with storage.open(self.log_so.append_path(f"{new_table_version:020}.json"), "w") as fh:
             new_entry.write(fh)
 
 class DeltaTable:
     def __init__(
         self,
-        loc: str | storage.Location | storage.LocatedFS,
-        log_loc: str | storage.Location | storage.LocatedFS | None = None,
+        loc: str | storage.Location | storage.StorageObject,
+        log_loc: str | storage.Location | storage.StorageObject | None = None,
         storage_options: dict | None = None,
     ):
-        self.lfs = storage.LocatedFS.resolve(loc, storage_options)
+        self.so = storage.StorageObject.resolve(loc, storage_options)
         if log_loc is None:
-            self.log_lfs = self.lfs.append_path("_delta_log")
+            self.log_so = self.so.append_path("_delta_log")
         else:
-            self.log_lfs = storage.LocatedFS.resolve(log_loc, storage_options)
-        self.dlog = read_delta_log(self.log_lfs)
+            self.log_so = storage.StorageObject.resolve(log_loc, storage_options)
+        self.dlog = read_delta_log(self.log_so)
         self.adds = self.dlog.resolve_add_actions()
 
     @property
@@ -142,10 +142,10 @@ class DeltaTable:
         return max(self.dlog.entries.keys())
 
     def to_pyarrow_dataset(self):
-        paths = [self.lfs.append_path(path).path for path in self.adds]
+        paths = [self.so.append_path(path).path for path in self.adds]
         return pyarrow.dataset.dataset(
             paths,
             format="parquet",
             partitioning="hive",
-            filesystem=self.lfs.fs,
+            filesystem=self.so.fs,
         )

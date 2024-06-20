@@ -51,7 +51,7 @@ class Location:
 def get_filesystem(scheme: str, storage_options: dict | None = None) -> fsspec.AbstractFileSystem:
     return fsspec.filesystem(scheme, **(storage_options or dict()))
 
-class LocatedFS(NamedTuple):
+class StorageObject(NamedTuple):
     loc: Location
     fs: fsspec.AbstractFileSystem
 
@@ -69,7 +69,7 @@ class LocatedFS(NamedTuple):
         self.fs.mkdir(self.path)
 
     @classmethod
-    def resolve(cls, loc, storage_options: dict | None = None) -> "LocatedFS":
+    def resolve(cls, loc, storage_options: dict | None = None) -> "StorageObject":
         if isinstance(loc, cls):
             return loc
         else:
@@ -77,12 +77,12 @@ class LocatedFS(NamedTuple):
             fs = get_filesystem(loc.scheme, storage_options)
         return cls(loc, fs)
 
-def list_files_sorted(locfs: LocatedFS) -> list[LocatedFS]:
+def list_files_sorted(locfs: StorageObject) -> list[StorageObject]:
     paths = sorted([info["name"] for info in locfs.fs.ls(locfs.loc.path, detail=True)
                     if "file" == info["type"]])
-    return [LocatedFS(Location(locfs.loc.scheme, path), locfs.fs) for path in paths]
+    return [StorageObject(Location(locfs.loc.scheme, path), locfs.fs) for path in paths]
 
-def open(locfs: LocatedFS, mode: str="r") -> fsspec.core.OpenFile:
+def open(locfs: StorageObject, mode: str="r") -> fsspec.core.OpenFile:
     if "file" == locfs.loc.scheme and "w" in mode:
         folder = locfs.loc.dirname()
         if locfs.fs.exists(folder):

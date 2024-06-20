@@ -15,7 +15,7 @@ class TestStorage(unittest.TestCase):
             ("s3://test-xdlake/tests", f"s3://test-xdlake/tests/foo/{name}"), 
         ]
         for url, expected_path in tests:
-            lfs = storage.LocatedFS.resolve(url)
+            lfs = storage.StorageObject.resolve(url)
             new_loc = lfs.append_path("foo", name)
             self.assertEqual(new_loc.path, expected_path)
             d = os.urandom(8)
