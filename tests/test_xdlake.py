@@ -1,4 +1,3 @@
-import shutil
 import random
 import unittest
 from uuid import uuid4
@@ -123,21 +122,6 @@ class TestXdLake(unittest.TestCase):
             pyarrow.concat_tables(tables),
             xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table()
         )
-
-    def write_deltalake(self):
-        loc = "tdl"
-        shutil.rmtree(loc, ignore_errors=True)
-
-        for _ in range(1):
-            deltalake.write_deltalake("tdl", next(self.table_gen), mode="append")
-
-        for _ in range(1):
-            deltalake.write_deltalake("tdl", next(self.table_gen), mode="overwrite")
-
-    def test_foo(self):
-        a = deltalake.DeltaTable("tdl").to_pyarrow_dataset().to_table().to_pandas()
-        b = xdlake.DeltaTable("tdl").to_pyarrow_dataset().to_table().to_pandas()
-        assert_frame_equal(a, b)
 
 
 if __name__ == '__main__':
