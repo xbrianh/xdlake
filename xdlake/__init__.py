@@ -37,7 +37,7 @@ class Writer:
         else:
             self.log_so = storage.StorageObject.resolve(log_loc, storage_options)
 
-    def write_data(self, table: pa.Table, version: int, **write_kwargs) -> list[delta_log.Add]:
+    def write_data(self, table: pa.Table | pa.dataset.Dataset | pa.RecordBatch, version: int, **write_kwargs) -> list[delta_log.Add]:
         add_actions = list()
 
         def visitor(visited_file):
@@ -78,7 +78,7 @@ class Writer:
 
     def write(
         self,
-        df: pa.Table,
+        data: pa.Table | pa.dataset.Dataset | pa.RecordBatch,
         mode: str | delta_log.WriteMode = delta_log.WriteMode.append.name,
         schema_mode: str = "overwrite",
         partition_by: list | None = None,
@@ -86,7 +86,7 @@ class Writer:
     ):
         # TODO refactor this method, shit's getting complicated
         mode = delta_log.WriteMode[mode] if isinstance(mode, str) else mode
-        schema = delta_log.Schema.from_pyarrow_schema(df.schema)
+        schema = delta_log.Schema.from_pyarrow_schema(data.schema)
         merged_schema: delta_log.Schema | None = None
         dlog = read_delta_log(self.log_so)
         if not dlog.entries:
@@ -111,7 +111,7 @@ class Writer:
         else:
             partition_by = list()
 
-        new_add_actions = self.write_data(df, new_table_version, **write_kwargs)
+        new_add_actions = self.write_data(data, new_table_version, **write_kwargs)
 
         new_entry = delta_log.DeltaLogEntry()
         if 0 == new_table_version:

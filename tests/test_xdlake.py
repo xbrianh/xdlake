@@ -1,7 +1,9 @@
+import os
 import random
 import shutil
 import unittest
 from uuid import uuid4
+from tempfile import TemporaryDirectory
 
 import numpy as np
 import pyarrow
@@ -140,6 +142,29 @@ class TestXdLake(unittest.TestCase):
             pyarrow.concat_tables(tables),
             xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table()
         )
+
+    def test_write_kind(self):
+        with TemporaryDirectory() as tempdir:
+            tables = {os.path.join(f"{tempdir}", f"{uuid4()}.parquet"): next(self.table_gen)
+                      for _ in range(27)}
+            for filepath in tables:
+                pyarrow.parquet.write_table(tables[filepath], filepath)
+            ds = pyarrow.dataset.dataset(list(tables.keys()))
+
+            expected = pyarrow.concat_tables(tables.values())
+
+            with self.subTest("write pyarrow dataset"):
+                loc = f"testdl/{uuid4()}"
+                writer = xdlake.Writer(loc)
+                writer.write(ds, partition_by=["cats"])
+                _assert_arrow_table_equal(expected, xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table())
+
+            with self.subTest("write pyarrow record batches"):
+                loc = f"testdl/{uuid4()}"
+                writer = xdlake.Writer(loc)
+                for batch in ds.to_batches():
+                    writer.write(batch, partition_by=["cats"])
+                _assert_arrow_table_equal(expected, xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table())
 
 
 if __name__ == '__main__':
