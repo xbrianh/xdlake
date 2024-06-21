@@ -1,6 +1,6 @@
 import os
 from urllib.parse import urlparse
-from typing import Any, NamedTuple
+from typing import Any, Generator, NamedTuple
 
 import fsspec
 
@@ -68,6 +68,15 @@ class StorageObject(NamedTuple):
     def mkdir(self):
         self.fs.mkdir(self.path)
 
+    def list_files(self) -> Generator["StorageObject", None, None]:
+        for info in self.fs.ls(self.loc.path, detail=True):
+            if "file" == info["type"]:
+                yield type(self)(Location(self.loc.scheme, info["name"]), self.fs)
+
+    def list_files_sorted(self) -> list["StorageObject"]:
+        # TODO don't sort for s3 or gcs
+        return sorted([so for so in self.list_files()], key=lambda i: i.path)
+
     @classmethod
     def resolve(cls, loc, storage_options: dict | None = None) -> "StorageObject":
         if isinstance(loc, cls):
@@ -76,11 +85,6 @@ class StorageObject(NamedTuple):
             loc = Location.with_loc(loc)
             fs = get_filesystem(loc.scheme, storage_options)
         return cls(loc, fs)
-
-def list_files_sorted(locfs: StorageObject) -> list[StorageObject]:
-    paths = sorted([info["name"] for info in locfs.fs.ls(locfs.loc.path, detail=True)
-                    if "file" == info["type"]])
-    return [StorageObject(Location(locfs.loc.scheme, path), locfs.fs) for path in paths]
 
 def open(locfs: StorageObject, mode: str="r") -> fsspec.core.OpenFile:
     if "file" == locfs.loc.scheme and "w" in mode:

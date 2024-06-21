@@ -16,7 +16,7 @@ def read_delta_log(
     dlog = delta_log.DeltaLog()
     if not so.exists():
         return dlog
-    for entry_lfs in storage.list_files_sorted(so):
+    for entry_lfs in so.list_files_sorted():
         entry_version = int(entry_lfs.loc.basename().split(".")[0])
         with storage.open(entry_lfs) as fh:
             dlog[entry_version] = delta_log.DeltaLogEntry(fh)
