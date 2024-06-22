@@ -45,6 +45,37 @@ class TestXdLake(unittest.TestCase):
     def setUp(self):
         self.table_gen = TableGen()
 
+    def write_table(self, loc, **kwargs) -> dict:
+        if loc.startswith("s3://"):
+            fs = xdlake.storage.get_filesystem("s3")
+        else:
+            fs = xdlake.storage.get_filesystem("file")
+        t = next(self.table_gen)
+
+        written_files = list()
+
+        def visitor(visited_file):
+            written_files.append(visited_file.path)
+
+        pa.dataset.write_dataset(
+            t,
+            loc,
+            format="parquet",
+            filesystem=fs,
+            file_visitor=visitor,
+            **kwargs
+        )
+
+        return {"table": t, "written_files": written_files}
+
+    def write_tables(self, locs, **kwargs):
+        tables, paths = list(), list()
+        for loc in locs:
+            info = self.write_table(loc, **kwargs)
+            tables.append(info["table"])
+            paths.extend(info["written_files"])
+        return tables, paths
+
     def test_xdlake(self):
         loc = f"testdl/{uuid4()}"
         writer = xdlake.Writer(loc)
@@ -145,13 +176,9 @@ class TestXdLake(unittest.TestCase):
 
     def test_write_kind(self):
         with TemporaryDirectory() as tempdir:
-            tables = {os.path.join(f"{tempdir}", f"{uuid4()}.parquet"): next(self.table_gen)
-                      for _ in range(27)}
-            for filepath in tables:
-                pa.parquet.write_table(tables[filepath], filepath)
-            ds = pa.dataset.dataset(list(tables.keys()))
-
-            expected = pa.concat_tables(tables.values())
+            tables, paths = self.write_tables([os.path.join(f"{tempdir}", f"{uuid4()}.parquet") for _ in range(27)])
+            ds = pa.dataset.dataset(paths)
+            expected = pa.concat_tables(tables)
 
             with self.subTest("write pyarrow dataset"):
                 loc = f"testdl/{uuid4()}"
