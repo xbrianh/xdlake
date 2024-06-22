@@ -42,7 +42,7 @@ class Writer:
 
         def visitor(visited_file):
             stats = delta_log.Statistics.from_parquet_file_metadata(
-                pyarrow.parquet.ParquetFile(visited_file.path).metadata
+                pa.parquet.ParquetFile(visited_file.path).metadata
             )
 
             relpath = visited_file.path.replace(self.so.path, "").strip("/")
@@ -63,7 +63,7 @@ class Writer:
                 )
             )
 
-        pyarrow.dataset.write_dataset(
+        pa.dataset.write_dataset(
             table,
             self.so.path,
             format="parquet",
@@ -149,7 +149,7 @@ class DeltaTable:
 
     def to_pyarrow_dataset(self):
         paths = [self.so.append_path(path).path for path in self.adds]
-        return pyarrow.dataset.dataset(
+        return pa.dataset.dataset(
             paths,
             format="parquet",
             partitioning="hive",

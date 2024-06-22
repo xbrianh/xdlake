@@ -6,7 +6,7 @@ from uuid import uuid4
 from tempfile import TemporaryDirectory
 
 import numpy as np
-import pyarrow
+import pyarrow as pa
 import deltalake
 from pandas.testing import assert_frame_equal
 
@@ -22,8 +22,8 @@ class TableGen:
         }
         self.order_parm = 0
 
-    def __next__(self) -> pyarrow.Table:
-        t = pyarrow.table(
+    def __next__(self) -> pa.Table:
+        t = pa.table(
             [np.random.random(11) for _ in range(len(self.columns))],
             names = self.columns,
         )
@@ -33,7 +33,7 @@ class TableGen:
 
         for name, choices in self.categoricals.items():
             t = t.append_column(name, [random.choice(choices) for _ in range(len(t))])
-        t = t.append_column("order", pyarrow.array(order, pyarrow.float64()))
+        t = t.append_column("order", pa.array(order, pa.float64()))
         return t
 
 def _assert_arrow_table_equal(a, b):
@@ -96,7 +96,7 @@ class TestXdLake(unittest.TestCase):
 
     def test_remote_log(self):
         tables = [next(self.table_gen) for _ in range(3)]
-        expected = pyarrow.concat_tables(tables)
+        expected = pa.concat_tables(tables)
         tests = [
             (f"s3://test-xdlake/tests/{uuid4()}", f"testdl/{uuid4()}"),
             (f"testdl/{uuid4()}", f"s3://test-xdlake/tests/{uuid4()}"),
@@ -139,7 +139,7 @@ class TestXdLake(unittest.TestCase):
             writer.write(t, partition_by=["cats"])
 
         _assert_arrow_table_equal(
-            pyarrow.concat_tables(tables),
+            pa.concat_tables(tables),
             xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table()
         )
 
@@ -148,10 +148,10 @@ class TestXdLake(unittest.TestCase):
             tables = {os.path.join(f"{tempdir}", f"{uuid4()}.parquet"): next(self.table_gen)
                       for _ in range(27)}
             for filepath in tables:
-                pyarrow.parquet.write_table(tables[filepath], filepath)
-            ds = pyarrow.dataset.dataset(list(tables.keys()))
+                pa.parquet.write_table(tables[filepath], filepath)
+            ds = pa.dataset.dataset(list(tables.keys()))
 
-            expected = pyarrow.concat_tables(tables.values())
+            expected = pa.concat_tables(tables.values())
 
             with self.subTest("write pyarrow dataset"):
                 loc = f"testdl/{uuid4()}"
