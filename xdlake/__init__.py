@@ -4,7 +4,7 @@ import pyarrow as pa
 import pyarrow.dataset
 import pyarrow.parquet
 
-from xdlake import storage, delta_log, utils
+from xdlake import delta_log, dataset, storage, utils
 
 
 def read_delta_log(
@@ -37,7 +37,7 @@ class Writer:
         else:
             self.log_so = storage.StorageObject.resolve(log_loc, storage_options)
 
-    def write_data(self, table: pa.Table | pa.dataset.Dataset | pa.RecordBatch, version: int, **write_kwargs) -> list[delta_log.Add]:
+    def write_data(self, ds: pa.dataset.Dataset, version: int, **write_kwargs) -> list[delta_log.Add]:
         add_actions = list()
 
         def visitor(visited_file):
@@ -64,7 +64,7 @@ class Writer:
             )
 
         pa.dataset.write_dataset(
-            table,
+            ds,
             self.so.path,
             format="parquet",
             filesystem=self.so.fs,
@@ -85,9 +85,13 @@ class Writer:
         storage_options: dict | None = None,
     ):
         # TODO refactor this method, shit's getting complicated
+
         mode = delta_log.WriteMode[mode] if isinstance(mode, str) else mode
-        schema = delta_log.Schema.from_pyarrow_schema(data.schema)
+
+        ds = dataset.resolve(data)
+        schema = delta_log.Schema.from_pyarrow_schema(ds.schema)
         merged_schema: delta_log.Schema | None = None
+
         dlog = read_delta_log(self.log_so)
         if not dlog.entries:
             new_table_version = 0
@@ -111,7 +115,7 @@ class Writer:
         else:
             partition_by = list()
 
-        new_add_actions = self.write_data(data, new_table_version, **write_kwargs)
+        new_add_actions = self.write_data(ds, new_table_version, **write_kwargs)
 
         new_entry = delta_log.DeltaLogEntry()
         if 0 == new_table_version:
