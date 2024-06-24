@@ -29,6 +29,9 @@ class Writer:
         self,
         loc: str | storage.Location | storage.StorageObject,
         log_loc: str | storage.Location | storage.StorageObject | None = None,
+        mode: str | delta_log.WriteMode = delta_log.WriteMode.append.name,
+        schema_mode: str = "overwrite",
+        partition_by: list | None = None,
         storage_options: dict | None = None,
     ):
         self.so = storage.StorageObject.resolve(loc, storage_options)
@@ -36,8 +39,66 @@ class Writer:
             self.log_so = self.so.append_path("_delta_log")
         else:
             self.log_so = storage.StorageObject.resolve(log_loc, storage_options)
+        self.mode = delta_log.WriteMode[mode] if isinstance(mode, str) else mode
+        self.schema_mode = schema_mode
+        self.partition_by = partition_by or list()
+        self.dlog = read_delta_log(self.log_so)
+        self._error_and_ignore = False
 
-    def write_data(self, ds: pa.dataset.Dataset, version: int, **write_kwargs) -> list[delta_log.Add]:
+        if self.dlog.version is None:
+            self.version_to_write = 0
+        else:
+            self.version_to_write = 1 + self.dlog.version
+            match self.mode:
+                case delta_log.WriteMode.error:
+                    raise FileExistsError(f"Table already exists at version {self.version_to_write - 1}")
+                case delta_log.WriteMode.ignore:
+                    self._error_and_ignore = True
+
+    @classmethod
+    def write(
+        cls,
+        loc: str | storage.Location | storage.StorageObject,
+        data: pa.Table | pa.dataset.Dataset | pa.RecordBatch,
+        write_arrow_dataset_options: dict | None = None,
+        **kwargs,
+    ):
+        writer = cls(loc, **kwargs)
+        if writer._error_and_ignore:
+            return
+        ds = dataset.resolve(data)
+        schema = writer.evaluate_schema(ds.schema)
+        new_add_actions = writer.write_data(ds, write_arrow_dataset_options)
+        writer.write_deltalog_entry(schema, new_add_actions)
+
+    def evaluate_schema(self, pyarrow_schema: pa.Schema) -> delta_log.Schema:
+        schema = delta_log.Schema.from_pyarrow_schema(pyarrow_schema)
+        if self.dlog.version is None:
+            return schema
+        else:
+            existing_schema = self.dlog.resolve_schema()
+            if delta_log.WriteMode.append == self.mode:
+                if "merge" == self.schema_mode:
+                    schema = existing_schema.merge(schema)
+                elif existing_schema != schema:
+                    raise ValueError("Schema mismatch")
+            return schema
+
+    def write_deltalog_entry(self, schema: delta_log.Schema, add_actions: list[delta_log.Add]):
+        new_entry = delta_log.DeltaLogEntry()
+        if 0 == self.version_to_write:
+            new_entry = delta_log.DeltaLogEntry.CreateTable(self.log_so.path, schema, self.partition_by, add_actions)
+            self.log_so.mkdir()
+        elif delta_log.WriteMode.append == self.mode:
+            new_entry = delta_log.DeltaLogEntry.AppendTable(self.partition_by, add_actions, schema)
+        elif delta_log.WriteMode.overwrite == self.mode:
+            existing_add_actions = self.dlog.resolve_add_actions().values()
+            new_entry = delta_log.DeltaLogEntry.OverwriteTable(self.partition_by, existing_add_actions, add_actions)
+
+        with storage.open(self.log_so.append_path(f"{self.version_to_write:020}.json"), "w") as fh:
+            new_entry.write(fh)
+
+    def write_data(self, ds: pa.dataset.Dataset, write_arrow_dataset_options: dict | None = None) -> list[delta_log.Add]:
         add_actions = list()
 
         def visitor(visited_file):
@@ -63,77 +124,23 @@ class Writer:
                 )
             )
 
+        write_arrow_dataset_options = write_arrow_dataset_options or dict()
+        if self.partition_by is not None:
+            write_arrow_dataset_options["partitioning"] = self.partition_by
+            write_arrow_dataset_options["partitioning_flavor"] = "hive"
+
         pa.dataset.write_dataset(
             ds,
             self.so.path,
             format="parquet",
             filesystem=self.so.fs,
-            basename_template=f"{version}-{uuid4()}-{{i}}.parquet",
+            basename_template=f"{self.version_to_write}-{uuid4()}-{{i}}.parquet",
             file_visitor=visitor,
             existing_data_behavior="overwrite_or_ignore",
-            ** write_kwargs,
+            ** write_arrow_dataset_options,
         )
 
         return add_actions
-
-    @classmethod
-    def write(
-        cls,
-        loc: str | storage.Location | storage.StorageObject,
-        data: pa.Table | pa.dataset.Dataset | pa.RecordBatch,
-        *,
-        log_loc: str | storage.Location | storage.StorageObject | None = None,
-        mode: str | delta_log.WriteMode = delta_log.WriteMode.append.name,
-        schema_mode: str = "overwrite",
-        partition_by: list | None = None,
-        storage_options: dict | None = None,
-    ):
-        # TODO refactor this method, shit's getting complicated
-        writer = cls(loc, log_loc, storage_options)
-
-        mode = delta_log.WriteMode[mode] if isinstance(mode, str) else mode
-
-        ds = dataset.resolve(data)
-        schema = delta_log.Schema.from_pyarrow_schema(ds.schema)
-        merged_schema: delta_log.Schema | None = None
-
-        dlog = read_delta_log(writer.log_so)
-        if not dlog.entries:
-            new_table_version = 0
-        else:
-            new_table_version = 1 + max(dlog.entries.keys())
-            if delta_log.WriteMode.error == mode:
-                raise FileExistsError(f"Table already exists at version {new_table_version - 1}")
-            elif delta_log.WriteMode.ignore == mode:
-                return
-            existing_schema = dlog.resolve_schema()
-            if delta_log.WriteMode.append == mode:
-                if "merge" == schema_mode:
-                    merged_schema = existing_schema.merge(schema)
-                elif existing_schema != schema:
-                    raise ValueError("Schema mismatch")
-
-        write_kwargs: dict = dict()
-        if partition_by is not None:
-            write_kwargs["partitioning"] = partition_by
-            write_kwargs["partitioning_flavor"] = "hive"
-        else:
-            partition_by = list()
-
-        new_add_actions = writer.write_data(ds, new_table_version, **write_kwargs)
-
-        new_entry = delta_log.DeltaLogEntry()
-        if 0 == new_table_version:
-            new_entry = delta_log.DeltaLogEntry.CreateTable(writer.log_so.path, schema, partition_by, new_add_actions)
-            writer.log_so.mkdir()
-        elif delta_log.WriteMode.append == mode:
-            new_entry = delta_log.DeltaLogEntry.AppendTable(partition_by, new_add_actions, merged_schema)
-        elif delta_log.WriteMode.overwrite == mode:
-            existing_add_actions = dlog.resolve_add_actions().values()
-            new_entry = delta_log.DeltaLogEntry.OverwriteTable(partition_by, existing_add_actions, new_add_actions)
-
-        with storage.open(writer.log_so.append_path(f"{new_table_version:020}.json"), "w") as fh:
-            new_entry.write(fh)
 
 class DeltaTable:
     def __init__(

@@ -305,8 +305,11 @@ class DeltaLog:
         return key in self.entries
 
     @property
-    def version(self):
-        return max(self.entries.keys())
+    def version(self) -> int | None:
+        try:
+            return max(self.entries.keys())
+        except ValueError:
+            return None
 
     def resolve_schema(self) -> Schema:
         for v in sorted(self.entries.keys(), reverse=True):
