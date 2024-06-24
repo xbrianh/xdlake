@@ -10,7 +10,7 @@ from xdlake import storage
 RESOLVABLE = Union[str | storage.StorageObject | pa.Table | pa.RecordBatch | pa.dataset.Dataset]
 
 
-def intersect_schemas(schemas) -> pa.Schema | None:
+def intersect_schemas(schemas) -> pa.Schema:
     common_fields = set.intersection(*[{f for f in schema} for schema in schemas])
     fields = list()
     present_fields = set()

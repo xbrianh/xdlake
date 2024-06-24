@@ -7,31 +7,40 @@ from xdlake import storage
 
 
 class TestStorage(unittest.TestCase):
-    def test_storage(self):
+    def setUp(self):
+        self.td = TemporaryDirectory()
+        self.scratch_folder = os.path.abspath(self.td.name)
+
+    def tearDown(self):
+        self.td.cleanup()
+
+    def test_resolution(self):
+        os.chdir(self.scratch_folder)
         name = f"{uuid4()}"
         tests = [
-            ("/tmp/tests", f"/tmp/tests/foo/{name}"),
-            ("tmp/tests", f"{os.getcwd()}/tmp/tests/foo/{name}"),
-            ("file:///tmp/tests", f"/tmp/tests/foo/{name}"),
-            ("s3://test-xdlake/tests", f"s3://test-xdlake/tests/foo/{name}"), 
+            ("local absolute", f"{self.scratch_folder}/tests", f"{self.scratch_folder}/tests/foo/{name}"),
+            ("local relative", "tests", f"{os.getcwd()}/tests/foo/{name}"),
+            ("local file url", f"file://{self.scratch_folder}/tests", f"{self.scratch_folder}/tests/foo/{name}"),
+            ("s3", "s3://test-xdlake/tests", f"s3://test-xdlake/tests/foo/{name}"), 
         ]
-        for url, expected_path in tests:
-            lfs = storage.StorageObject.resolve(url)
-            new_loc = lfs.append_path("foo", name)
-            self.assertEqual(new_loc.path, expected_path)
-            d = os.urandom(7)
-            with storage.open(new_loc, mode="wb") as fh:
-                fh.write(d)
-            with storage.open(new_loc, mode="rb") as fh:
-                self.assertEqual(fh.read(), d)
+        for test_name, url, expected_path in tests:
+            with self.subTest(test_name):
+                sob = storage.StorageObject.resolve(url)
+                new_loc = sob.append_path("foo", name)
+                self.assertEqual(new_loc.path, expected_path)
+                d = os.urandom(7)
+                with storage.open(new_loc, mode="wb") as fh:
+                    fh.write(d)
+                with storage.open(new_loc, mode="rb") as fh:
+                    self.assertEqual(fh.read(), d)
 
+    def test_listing(self):
         names = [f"{uuid4()}" for _ in range(11)]
-        with TemporaryDirectory() as tempdir:
-            for name in names:
-                with open(f"{tempdir}/{name}", "wb") as fh:
-                    fh.write(os.urandom(7))
-            loc = storage.StorageObject.resolve(tempdir)
-            self.assertEqual(sorted(names), [so.loc.basename() for so in loc.list_files_sorted()])
+        for name in names:
+            with open(f"{self.scratch_folder}/{name}", "wb") as fh:
+                fh.write(os.urandom(7))
+        loc = storage.StorageObject.resolve(self.scratch_folder)
+        self.assertEqual(sorted(names), [so.loc.basename() for so in loc.list_files_sorted()])
 
 
 if __name__ == '__main__':

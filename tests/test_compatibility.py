@@ -1,0 +1,59 @@
+import os
+import unittest
+from uuid import uuid4
+
+import pyarrow as pa
+import deltalake
+
+import xdlake
+
+from tests.utils import TableGenMixin, assert_arrow_table_equal
+
+
+class TestCompatibility(TableGenMixin, unittest.TestCase):
+    def test_append_and_overwrite(self):
+        loc = f"{self.scratch_folder}/{uuid4()}"
+        writer = xdlake.Writer(loc)
+
+        for _ in range(3):
+            writer.write(self.gen_table(), partition_by=["cats", "bats"])
+
+        with self.subTest("should aggree", mode="append"):
+            df_expected = deltalake.DeltaTable(loc)
+            df = xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table()
+            assert_arrow_table_equal(df_expected, df)
+
+        with self.subTest("should aggree", mode="overwrite"):
+            writer.write(self.gen_table(), partition_by=["cats", "bats"], mode="overwrite")
+            df_expected = deltalake.DeltaTable(loc)
+            df = xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table()
+            assert_arrow_table_equal(df_expected, df)
+
+    def test_schema_change(self):
+        loc = f"{self.scratch_folder}/{uuid4()}"
+        dl_loc = f"{self.scratch_folder}/{uuid4()}"
+        writer = xdlake.Writer(loc)
+
+        tables = self.gen_tables(3)
+        table_new_schema = self.gen_table(additional_cols=["new_column"])
+
+        for t in tables:
+            writer.write(t, mode="append")
+            deltalake.write_deltalake(dl_loc, t, mode="append")
+
+        with self.subTest("should raise"):
+            with self.assertRaises(ValueError):
+                writer.write(table_new_schema, mode="append")
+
+        with self.subTest("should work"):
+            writer.write(table_new_schema, mode="append", schema_mode="merge")
+            deltalake.write_deltalake(dl_loc, table_new_schema, mode="append", schema_mode="merge", engine="rust")
+
+        assert_arrow_table_equal(
+            deltalake.DeltaTable(dl_loc).to_pyarrow_table(),
+            xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table(),
+        )
+
+
+if __name__ == '__main__':
+    unittest.main()
