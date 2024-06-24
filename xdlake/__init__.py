@@ -76,15 +76,20 @@ class Writer:
 
         return add_actions
 
+    @classmethod
     def write(
-        self,
+        cls,
+        loc: str | storage.Location | storage.StorageObject,
         data: pa.Table | pa.dataset.Dataset | pa.RecordBatch,
+        *,
+        log_loc: str | storage.Location | storage.StorageObject | None = None,
         mode: str | delta_log.WriteMode = delta_log.WriteMode.append.name,
         schema_mode: str = "overwrite",
         partition_by: list | None = None,
         storage_options: dict | None = None,
     ):
         # TODO refactor this method, shit's getting complicated
+        writer = cls(loc, log_loc, storage_options)
 
         mode = delta_log.WriteMode[mode] if isinstance(mode, str) else mode
 
@@ -92,7 +97,7 @@ class Writer:
         schema = delta_log.Schema.from_pyarrow_schema(ds.schema)
         merged_schema: delta_log.Schema | None = None
 
-        dlog = read_delta_log(self.log_so)
+        dlog = read_delta_log(writer.log_so)
         if not dlog.entries:
             new_table_version = 0
         else:
@@ -115,19 +120,19 @@ class Writer:
         else:
             partition_by = list()
 
-        new_add_actions = self.write_data(ds, new_table_version, **write_kwargs)
+        new_add_actions = writer.write_data(ds, new_table_version, **write_kwargs)
 
         new_entry = delta_log.DeltaLogEntry()
         if 0 == new_table_version:
-            new_entry = delta_log.DeltaLogEntry.CreateTable(self.log_so.path, schema, partition_by, new_add_actions)
-            self.log_so.mkdir()
+            new_entry = delta_log.DeltaLogEntry.CreateTable(writer.log_so.path, schema, partition_by, new_add_actions)
+            writer.log_so.mkdir()
         elif delta_log.WriteMode.append == mode:
             new_entry = delta_log.DeltaLogEntry.AppendTable(partition_by, new_add_actions, merged_schema)
         elif delta_log.WriteMode.overwrite == mode:
             existing_add_actions = dlog.resolve_add_actions().values()
             new_entry = delta_log.DeltaLogEntry.OverwriteTable(partition_by, existing_add_actions, new_add_actions)
 
-        with storage.open(self.log_so.append_path(f"{new_table_version:020}.json"), "w") as fh:
+        with storage.open(writer.log_so.append_path(f"{new_table_version:020}.json"), "w") as fh:
             new_entry.write(fh)
 
 class DeltaTable:
