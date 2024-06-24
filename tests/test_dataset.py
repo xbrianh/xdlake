@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import pyarrow as pa
 
-from xdlake import dataset
+from xdlake import dataset, storage
 
 from tests.utils import TableGenMixin, assert_arrow_table_equal
 
@@ -49,6 +49,25 @@ class TestDataset(TableGenMixin, unittest.TestCase):
         dsr = dataset.resolve([table, ds, *record_batches, *paths])
         self.assertIsInstance(dsr, pa.dataset.UnionDataset)
         self.assertEqual(dsr.schema, original_schema)
+
+    def test_paths_with_different_schema(self):
+        new_col_name = f"{uuid4()}"[:6]
+        loc = storage.StorageObject.resolve(f"s3://test-xdlake/{uuid4()}")
+        tables = {loc.append_path(f"{uuid4()}.parquet"): self.gen_table()
+                  for _ in range(2)}
+        tables[loc.append_path(f"{uuid4()}.parquet")] = self.gen_table(additional_cols=new_col_name)
+        for filepath in tables:
+            pa.parquet.write_table(tables[filepath], filepath.path, filesystem=loc.fs)
+
+        paths = [sob for sob in storage.StorageObject.resolve(loc).list_files()]
+
+        with self.subTest("common schema"):
+            ds = dataset.resolve(paths)
+            self.assertNotIn(new_col_name, ds.to_table().column_names)
+
+        with self.subTest("merge schema"):
+            ds = dataset.resolve(paths, schema_mode="merge")
+            self.assertIn(new_col_name, ds.to_table().column_names)
 
 
 if __name__ == '__main__':

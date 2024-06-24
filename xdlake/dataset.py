@@ -42,11 +42,12 @@ def sobs_to_datasets(schema_to_sobs: dict[str, list[storage.StorageObject]], sch
     for scheme, sobs in schema_to_sobs.items():
         fs = sobs[0].fs
 
-        schema = None
+        schemas = [pa.parquet.ParquetFile(sob.path, filesystem=fs).schema.to_arrow_schema()
+                   for sob in sobs]
         if "merge" == schema_mode:
-            schemas = [pa.parquet.ParquetFile(sob.path, filesystem=fs).schema.to_arrow_schema()
-                       for sob in sobs]
             schema = pa.unify_schemas(schemas)
+        else:
+            schema = intersect_schemas(schemas)
 
         ds = pa.dataset.dataset([so.loc.path for so in sobs], schema=schema, filesystem=fs)
         datasets.append(ds)
