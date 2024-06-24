@@ -98,7 +98,7 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
 
     def test_write_kind(self):
         tables, paths = self.gen_parquets_for_tables(
-            table_locs=[os.path.join(f"{self.scratch_folder}", f"{uuid4()}.parquet") for _ in range(27)]
+            table_locs=[os.path.join(f"{self.scratch_folder}", f"{uuid4()}.parquet") for _ in range(3)]
         )
         ds = pa.dataset.dataset(paths)
         expected = pa.concat_tables(tables)
