@@ -1,5 +1,6 @@
 import os
 import unittest
+from contextlib import nullcontext
 from uuid import uuid4
 
 import pyarrow as pa
@@ -26,6 +27,26 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
             xdlake.Writer.write(loc, t, partition_by=["cats", "bats"], mode="overwrite")
             df = xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table()
             assert_arrow_table_equal(t, df)
+
+    def test_partition_column_change(self):
+        tests = [
+            ([], ["bats"], True),
+            (["cats"], [], True),
+            (["cats"], ["bats"], True),
+            (["cats", "bats"], [], True),
+            ([], ["cats", "bats"], True),
+            (["cats", "bats"], ["cats", "bats"], False),
+            (["cats", "bats"], ["bats", "cats"], False),
+            (["cats", "bats"], None, False),
+        ]
+
+        for mode in ["append", "overwrite"]:
+            for initial_partitions, partitions, should_raise in tests:
+                with self.subTest(mode=mode, initial_partitions=initial_partitions, partitions=partitions):
+                    loc = f"{self.scratch_folder}/{uuid4()}"
+                    xdlake.Writer.write(loc, self.gen_table(), partition_by=initial_partitions)
+                    with self.assertRaises(ValueError) if should_raise else nullcontext():
+                        xdlake.Writer.write(loc, self.gen_table(), partition_by=partitions, mode=mode)
 
     def test_schema_change(self):
         loc = f"{self.scratch_folder}/{uuid4()}"

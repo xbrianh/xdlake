@@ -54,6 +54,16 @@ class Writer:
                     raise FileExistsError(f"Table already exists at version {self.version_to_write - 1}")
                 case delta_log.WriteMode.ignore:
                     self._error_and_ignore = True
+                case _:
+                    self.partition_by = self._resolve_partition_by(partition_by)
+
+    def _resolve_partition_by(self, new_partition_by) -> list:
+        existing_partition_columns = self.dlog.resolve_partition_columns()
+        if new_partition_by is None:
+            pass
+        elif set(existing_partition_columns) != set(new_partition_by):
+            raise ValueError(f"Expected partition columns {existing_partition_columns}, got {self.partition_by}")
+        return existing_partition_columns
 
     @classmethod
     def write(

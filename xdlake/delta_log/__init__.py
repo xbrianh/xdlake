@@ -114,6 +114,13 @@ class TableCommit(_DeltaLogAction):
     operation: str = TableCommitOperation.CREATE
     clientVersion: str = CLIENT_VERSION
 
+    @property
+    def metadata(self):
+        if TableOperationParm.METADATA in self.operationParameters:
+            return json.loads(self.operationParameters[TableOperationParm.METADATA])
+        else:
+            return {}
+
     @classmethod
     def create_with_parms(cls, location: str, timestamp: int, metadata: TableMetadata, protocol: Protocol):
         op_parms = {
@@ -247,6 +254,15 @@ class DeltaLogEntry:
         return [a for a in self.actions
                 if isinstance(a, Remove)]
 
+    def partition_columns(self) -> list[str] | None:
+        for a in self.actions:
+            if isinstance(a, TableCommit):
+                if a.operation == TableCommitOperation.WRITE:
+                    return a.operationParameters["partitionBy"]
+                elif a.operation == TableCommitOperation.CREATE:
+                    return a.metadata["partitionColumns"]
+        return None
+
     @classmethod
     def with_actions(cls, actions: list[_DeltaLogAction]) -> "DeltaLogEntry":
         entry = cls()
@@ -316,6 +332,14 @@ class DeltaLog:
             for remove in entry.remove_actions():
                 del adds[remove.path]
         return adds
+
+    def resolve_partition_columns(self) -> list:
+        cols = list()
+        for v in sorted(self.entries.keys(), reverse=True):
+            cols = self.entries[v].partition_columns()
+            if cols is not None:
+                return cols
+        raise ValueError("No partition by found in log entries")
 
 def generate_remove_acctions(add_actions: Iterable[Add]) -> list[Remove]:
     remove_actions = list()

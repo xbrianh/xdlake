@@ -1,10 +1,10 @@
-from enum import Enum
+import shutil
 
-class WriteMode(Enum):
-    append = "Append"
-    overwrite = "Overwrite"
-    error = "Error"
-    ignore = "Ignore"
+import deltalake
+from tests.utils import TableGen
 
-WriteMode["append"]
-# WriteMode[WriteMode.append]
+table_gen = TableGen()
+
+shutil.rmtree("tdl", ignore_errors=True)
+deltalake.write_deltalake("tdl", next(table_gen), partition_by=["cats"])
+deltalake.write_deltalake("tdl", next(table_gen), mode="append")
