@@ -108,36 +108,29 @@ class TableCommitOperation:
     WRITE = "WRITE"
 
 @dataclass
-class TableCommitCreate(_DeltaLogAction):
+class TableCommit(_DeltaLogAction):
     timestamp: int
     operationParameters: dict
     operation: str = TableCommitOperation.CREATE
     clientVersion: str = CLIENT_VERSION
 
     @classmethod
-    def with_parms(cls, location: str, timestamp: int, metadata: TableMetadata, protocol: Protocol):
+    def create_with_parms(cls, location: str, timestamp: int, metadata: TableMetadata, protocol: Protocol):
         op_parms = {
             TableOperationParm.METADATA: metadata.json(),
             TableOperationParm.PROTOCOL: protocol.json(),
             TableOperationParm.LOCATION: location,
             TableOperationParm.MODE: "ErrorIfExists",
         }
-        return cls(timestamp=timestamp, operationParameters=op_parms)
-
-@dataclass
-class TableCommitWrite(_DeltaLogAction):
-    timestamp: int
-    operationParameters: dict
-    operation: str = TableCommitOperation.WRITE
-    clientVersion: str = CLIENT_VERSION
+        return cls(timestamp=timestamp, operationParameters=op_parms, operation=TableCommitOperation.CREATE)
 
     @classmethod
-    def with_parms(cls, timestamp: int, mode: str, partition_by: list | None = None):
+    def write_with_parms(cls, timestamp: int, mode: str, partition_by: list | None = None):
         op_parms = {
             TableOperationParm.PARTITION_BY: partition_by or list(),
             TableOperationParm.MODE: mode,
         }
-        return cls(timestamp=timestamp, operationParameters=op_parms)
+        return cls(timestamp=timestamp, operationParameters=op_parms, operation=TableCommitOperation.WRITE)
 
 def _data_type_from_arrow(_t):
     if _t not in arrow_to_delta_type:
@@ -216,10 +209,8 @@ class DeltaLogEntry:
 
         match action:
             case Type.commitInfo:
-                if TableCommitOperation.CREATE == info["operation"]:
-                    return TableCommitCreate(**info)
-                elif TableCommitOperation.WRITE == info["operation"]:
-                    return TableCommitWrite(**info)
+                if TableCommitOperation.CREATE == info["operation"] or TableCommitOperation.WRITE == info["operation"]:
+                    return TableCommit(**info)
             case Type.metaData:
                 return TableMetadata(**info)
             case Type.protocol:
@@ -236,9 +227,7 @@ class DeltaLogEntry:
         for a in self.actions:
             info = a.asdict()
             match a:
-                case TableCommitCreate():
-                    actions.append({Type.commitInfo.name: info})
-                case TableCommitWrite():
+                case TableCommit():
                     actions.append({Type.commitInfo.name: info})
                 case TableMetadata():
                     actions.append({Type.metaData.name: info})
@@ -268,12 +257,12 @@ class DeltaLogEntry:
     def CreateTable(cls, path: str, schema: Schema, partition_by: list, add_actions: list[Add]) -> "DeltaLogEntry":
         protocol = Protocol()
         table_metadata = TableMetadata(schemaString=schema.json(), partitionColumns=partition_by)
-        commit = TableCommitCreate.with_parms(path, utils.timestamp(), table_metadata, protocol)
+        commit = TableCommit.create_with_parms(path, utils.timestamp(), table_metadata, protocol)
         return cls.with_actions([protocol, table_metadata, *add_actions, commit])
 
     @classmethod
     def AppendTable(cls, partition_by: list, add_actions: list[Add], schema: Schema | None = None) -> "DeltaLogEntry":
-        commit = TableCommitWrite.with_parms(utils.timestamp(), mode=WriteMode.append.value, partition_by=partition_by)
+        commit = TableCommit.write_with_parms(utils.timestamp(), mode=WriteMode.append.value, partition_by=partition_by)
         actions = add_actions + [commit]
         if schema is not None:
             table_metadata = TableMetadata(schemaString=schema.json(), partitionColumns=partition_by)
@@ -287,7 +276,7 @@ class DeltaLogEntry:
         existing_add_actions: Iterable[Add],
         add_actions: list[Add]
     ) -> "DeltaLogEntry":
-        commit = TableCommitWrite.with_parms(utils.timestamp(), mode=WriteMode.overwrite.value, partition_by=partition_by)
+        commit = TableCommit.write_with_parms(utils.timestamp(), mode=WriteMode.overwrite.value, partition_by=partition_by)
         remove_actions = generate_remove_acctions(existing_add_actions)
         return cls.with_actions([*remove_actions, *add_actions, commit])
 
