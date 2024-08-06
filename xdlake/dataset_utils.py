@@ -53,7 +53,7 @@ def sobs_to_datasets(schema_to_sobs: dict[str, list[storage.StorageObject]], sch
         datasets.append(ds)
     return datasets
 
-def resolve(data: RESOLVABLE | Iterable[RESOLVABLE], schema_mode: str = "common") -> pa.dataset.UnionDataset:
+def union_dataset(data: RESOLVABLE | Iterable[RESOLVABLE], schema_mode: str = "common") -> pa.dataset.UnionDataset:
     if not isinstance(data, Iterable):
         data = [data]
 

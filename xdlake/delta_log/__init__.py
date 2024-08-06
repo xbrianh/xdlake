@@ -316,14 +316,14 @@ class DeltaLog:
         except ValueError:
             return None
 
-    def resolve_schema(self) -> Schema:
+    def schema(self) -> Schema:
         for v in sorted(self.entries.keys(), reverse=True):
             for a in self.entries[v].actions:
                 if isinstance(a, TableMetadata):
                     return a.schema
         raise RuntimeError("No schema found in log entries")
 
-    def resolve_add_actions(self) -> dict[str, Add]:
+    def add_actions(self) -> dict[str, Add]:
         adds = dict()
         for v in sorted(self.entries.keys()):
             entry = self.entries[v]
@@ -333,7 +333,7 @@ class DeltaLog:
                 del adds[remove.path]
         return adds
 
-    def resolve_partition_columns(self) -> list:
+    def partition_columns(self) -> list:
         cols = list()
         for v in sorted(self.entries.keys(), reverse=True):
             cols = self.entries[v].partition_columns()

@@ -4,7 +4,7 @@ import pyarrow as pa
 import pyarrow.dataset
 import pyarrow.parquet
 
-from xdlake import delta_log, dataset, storage, utils
+from xdlake import delta_log, dataset_utils, storage, utils
 
 
 def read_delta_log(
@@ -58,7 +58,7 @@ class Writer:
                     self.partition_by = self._resolve_partition_by(partition_by)
 
     def _resolve_partition_by(self, new_partition_by) -> list:
-        existing_partition_columns = self.dlog.resolve_partition_columns()
+        existing_partition_columns = self.dlog.partition_columns()
         if new_partition_by is None:
             pass
         elif set(existing_partition_columns) != set(new_partition_by):
@@ -76,7 +76,7 @@ class Writer:
         writer = cls(loc, **kwargs)
         if writer._error_and_ignore:
             return
-        ds = dataset.resolve(data)
+        ds = dataset_utils.union_dataset(data)
         schema = writer.evaluate_schema(ds.schema)
         new_add_actions = writer.write_data(ds, write_arrow_dataset_options)
         writer.write_deltalog_entry(schema, new_add_actions)
@@ -86,7 +86,7 @@ class Writer:
         if self.dlog.version is None:
             return schema
         else:
-            existing_schema = self.dlog.resolve_schema()
+            existing_schema = self.dlog.schema()
             if delta_log.WriteMode.append == self.mode:
                 if "merge" == self.schema_mode:
                     schema = existing_schema.merge(schema)
@@ -102,7 +102,7 @@ class Writer:
         elif delta_log.WriteMode.append == self.mode:
             new_entry = delta_log.DeltaLogEntry.AppendTable(self.partition_by, add_actions, schema)
         elif delta_log.WriteMode.overwrite == self.mode:
-            existing_add_actions = self.dlog.resolve_add_actions().values()
+            existing_add_actions = self.dlog.add_actions().values()
             new_entry = delta_log.DeltaLogEntry.OverwriteTable(self.partition_by, existing_add_actions, add_actions)
 
         with storage.open(self.log_so.append_path(f"{self.version_to_write:020}.json"), "w") as fh:
@@ -165,7 +165,7 @@ class DeltaTable:
         else:
             self.log_so = storage.StorageObject.with_location(log_loc, storage_options)
         self.dlog = read_delta_log(self.log_so)
-        self.adds = self.dlog.resolve_add_actions()
+        self.adds = self.dlog.add_actions()
 
     @property
     def version(self) -> int:
@@ -180,5 +180,5 @@ class DeltaTable:
             format="parquet",
             partitioning="hive",
             filesystem=self.so.fs,
-            schema=self.dlog.resolve_schema().to_pyarrow_schema(),
+            schema=self.dlog.schema().to_pyarrow_schema(),
         )

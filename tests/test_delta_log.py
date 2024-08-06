@@ -10,7 +10,7 @@ logdir = os.path.join(fixtures, "_delta_log")
 
 
 class TestDeltaLog(unittest.TestCase):
-    def test_resolve_schema(self):
+    def test_schema(self):
         expected = delta_log.Schema(
             fields=[
                 {"name": "bob", "type": "double", "nullable": True, "metadata": {}},
@@ -31,7 +31,7 @@ class TestDeltaLog(unittest.TestCase):
             type="struct",
         )
         dlog = xdlake.read_delta_log(logdir)
-        s = dlog.resolve_schema()
+        s = dlog.schema()
         self.assertEqual(s, expected)
 
 
