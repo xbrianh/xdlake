@@ -78,7 +78,7 @@ class StorageObject(NamedTuple):
         return sorted([so for so in self.list_files()], key=lambda i: i.path)
 
     @classmethod
-    def resolve(cls, loc, storage_options: dict | None = None) -> "StorageObject":
+    def with_location(cls, loc, storage_options: dict | None = None) -> "StorageObject":
         if isinstance(loc, cls):
             return loc
         else:

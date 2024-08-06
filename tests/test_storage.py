@@ -25,7 +25,7 @@ class TestStorage(unittest.TestCase):
         ]
         for test_name, url, expected_path in tests:
             with self.subTest(test_name):
-                sob = storage.StorageObject.resolve(url)
+                sob = storage.StorageObject.with_location(url)
                 new_loc = sob.append_path("foo", name)
                 self.assertEqual(new_loc.path, expected_path)
                 d = os.urandom(7)
@@ -39,7 +39,7 @@ class TestStorage(unittest.TestCase):
         for name in names:
             with open(f"{self.scratch_folder}/{name}", "wb") as fh:
                 fh.write(os.urandom(7))
-        loc = storage.StorageObject.resolve(self.scratch_folder)
+        loc = storage.StorageObject.with_location(self.scratch_folder)
         self.assertEqual(sorted(names), [so.loc.basename() for so in loc.list_files_sorted()])
 
 

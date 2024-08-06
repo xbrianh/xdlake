@@ -12,7 +12,7 @@ def read_delta_log(
     version: int | None = None,
     storage_options: dict | None = None,
 ) -> delta_log.DeltaLog:
-    so = storage.StorageObject.resolve(loc, storage_options)
+    so = storage.StorageObject.with_location(loc, storage_options)
     dlog = delta_log.DeltaLog()
     if not so.exists():
         return dlog
@@ -34,11 +34,11 @@ class Writer:
         partition_by: list | None = None,
         storage_options: dict | None = None,
     ):
-        self.so = storage.StorageObject.resolve(loc, storage_options)
+        self.so = storage.StorageObject.with_location(loc, storage_options)
         if log_loc is None:
             self.log_so = self.so.append_path("_delta_log")
         else:
-            self.log_so = storage.StorageObject.resolve(log_loc, storage_options)
+            self.log_so = storage.StorageObject.with_location(log_loc, storage_options)
         self.mode = delta_log.WriteMode[mode] if isinstance(mode, str) else mode
         self.schema_mode = schema_mode
         self.partition_by = partition_by or list()
@@ -159,11 +159,11 @@ class DeltaTable:
         log_loc: str | storage.Location | storage.StorageObject | None = None,
         storage_options: dict | None = None,
     ):
-        self.so = storage.StorageObject.resolve(loc, storage_options)
+        self.so = storage.StorageObject.with_location(loc, storage_options)
         if log_loc is None:
             self.log_so = self.so.append_path("_delta_log")
         else:
-            self.log_so = storage.StorageObject.resolve(log_loc, storage_options)
+            self.log_so = storage.StorageObject.with_location(log_loc, storage_options)
         self.dlog = read_delta_log(self.log_so)
         self.adds = self.dlog.resolve_add_actions()
 
