@@ -63,9 +63,7 @@ def resolve(data: RESOLVABLE | Iterable[RESOLVABLE], schema_mode: str = "common"
 
     for item in data:
         match item:
-            case pa.Table():
-                fragments.append(item)
-            case pa.RecordBatch():
+            case pa.Table() | pa.RecordBatch():
                 fragments.append(item)
             case str():
                 sob = storage.StorageObject.resolve(item)
