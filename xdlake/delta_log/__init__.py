@@ -1,4 +1,5 @@
 import json
+import datetime
 from enum import Enum
 from uuid import uuid4
 from collections import defaultdict
@@ -27,12 +28,20 @@ class Type(Enum):
     add = "add"
     remove = "remove"
 
+class _JSONEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, (datetime.date, datetime.datetime)):
+            return o.isoformat()
+        elif isinstance(o, bytes):
+            return repr(o.decode("raw_unicode_escape"))
+        return super().default(o)
+
 class _DeltaLogAction:
     def asdict(self):
         return asdict(self)
 
     def json(self):
-        return json.dumps(self.asdict())
+        return json.dumps(self.asdict(), cls=_JSONEncoder)
 
 @dataclass
 class Protocol(_DeltaLogAction):
@@ -44,10 +53,41 @@ class TableFormat(_DeltaLogAction):
     provider: str = "parquet"
     options: dict = field(default_factory=lambda: dict())
 
-arrow_to_delta_type = {
+ARROW_TO_DELTA_TYPE = {
+    pa.bool_(): "boolean",
+    pa.int8(): "byte",
+    pa.int16(): "short",
+    pa.int32(): "integer",
     pa.int64(): "long",
+    pa.uint8(): "byte",
+    pa.uint16(): "short",
+    pa.uint32(): "integer",
+    pa.uint64(): "long",
+    pa.date32(): "date",
+    pa.date64(): "date",
+    pa.timestamp("us"): "timestamp",
+    pa.float32(): "float",
     pa.float64(): "double",
+    pa.binary(): "binary",
     pa.string(): "string",
+    pa.utf8(): "string",
+    pa.large_binary(): "binary",
+    pa.large_string(): "string",
+    pa.large_utf8(): "string",
+}
+
+DELTA_TO_ARROW_TYPE = {
+    "boolean": pa.bool_(),
+    "byte": pa.int8(),
+    "short": pa.int16(),
+    "integer": pa.int32(),
+    "long": pa.int64(),
+    "date": pa.date64(),
+    "timestamp": pa.timestamp("us", tz="utc"),
+    "float": pa.float64(),
+    "double": pa.float64(),
+    "binary": pa.binary(),
+    "string": pa.string(),
 }
 
 @dataclass
@@ -71,8 +111,7 @@ class Schema(_DeltaLogAction):
         return cls(fields=fields)
 
     def to_pyarrow_schema(self):
-        delta_to_arrow_type = {v: k for k, v in arrow_to_delta_type.items()}
-        pairs = [(f["name"], delta_to_arrow_type[f["type"]]) for f in self.fields]
+        pairs = [(f["name"], DELTA_TO_ARROW_TYPE[f["type"]]) for f in self.fields]
         return pa.schema(pairs)
 
     def merge(self, other) -> "Schema":
@@ -140,9 +179,13 @@ class TableCommit(_DeltaLogAction):
         return cls(timestamp=timestamp, operationParameters=op_parms, operation=TableCommitOperation.WRITE)
 
 def _data_type_from_arrow(_t):
-    if _t not in arrow_to_delta_type:
-        raise TypeError(f"Cannot handle arrow type '{_t}', type={type(_t)}")
-    return arrow_to_delta_type[_t]
+    if isinstance(_t, pa.lib.TimestampType):
+        assert _t.unit == "us"
+        return "timestamp"
+    elif _t not in ARROW_TO_DELTA_TYPE:
+        err = f"Cannot handle arrow type '{_t}', type={type(_t)}"
+        raise TypeError(err)
+    return ARROW_TO_DELTA_TYPE[_t]
 
 @dataclass
 class Statistics(_DeltaLogAction):
