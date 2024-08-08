@@ -1,6 +1,9 @@
+import functools
+import operator
 from uuid import uuid4
 
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.dataset
 import pyarrow.parquet
 
@@ -166,6 +169,10 @@ class DeltaTable:
             self.log_so = storage.StorageObject.with_location(log_loc, storage_options)
         self.dlog = read_delta_log(self.log_so)
         self.adds = self.dlog.add_actions()
+        self.partition_columns = self.dlog.partition_columns()
+        self.pyarrow_file_format = pyarrow.dataset.ParquetFileFormat(
+            default_fragment_scan_options=pyarrow.dataset.ParquetFragmentScanOptions(pre_buffer=True)
+        )
 
     @property
     def version(self) -> int:
@@ -173,12 +180,35 @@ class DeltaTable:
             return -1
         return max(self.dlog.entries.keys())
 
-    def to_pyarrow_dataset(self):
-        paths = [self.so.append_path(path).path for path in self.adds]
-        return pa.dataset.dataset(
-            paths,
-            format="parquet",
-            partitioning="hive",
-            filesystem=self.so.fs,
-            schema=self.dlog.schema().to_pyarrow_schema(),
+    def add_action_to_fragment(self, add: delta_log.Add, filesystem: pa.fs.PyFileSystem) -> pa.dataset.Fragment:
+        if self.partition_columns:
+            partition_expressions = [
+                pc.equal(pc.field(name), pc.scalar(value))
+                for name, value in add.partitionValues.items()
+            ]
+            partition_expression = functools.reduce(operator.and_, partition_expressions)
+        else:
+            partition_expression = None
+
+        # TODO add min/max and other info to partition expression to help pyarrow do filtering
+
+        fragment = self.pyarrow_file_format.make_fragment(
+            self.so.append_path(add.path).path,
+            partition_expression=partition_expression,
+            filesystem=filesystem,
+        )
+
+        return fragment
+
+    def to_pyarrow_dataset(self) -> pyarrow.dataset.Dataset:
+        fs = self.so.pyarrow_py_filesystem()
+        fragments = [
+            self.add_action_to_fragment(add, fs)
+            for _, add in self.adds.items()
+        ]
+        return pyarrow.dataset.FileSystemDataset(
+            fragments,
+            self.dlog.schema().to_pyarrow_schema(),
+            self.pyarrow_file_format,
+            fs,
         )

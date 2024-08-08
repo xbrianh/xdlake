@@ -3,6 +3,7 @@ from urllib.parse import urlparse
 from typing import Any, Generator, NamedTuple
 
 import fsspec
+import pyarrow.fs
 
 
 class Location:
@@ -85,6 +86,9 @@ class StorageObject(NamedTuple):
             loc = Location.with_loc(loc)
             fs = get_filesystem(loc.scheme, storage_options)
         return cls(loc, fs)
+
+    def pyarrow_py_filesystem(self) -> pyarrow.fs.PyFileSystem:
+        return pyarrow.fs.PyFileSystem(pyarrow.fs.FSSpecHandler(self.fs))
 
 def open(locfs: StorageObject, mode: str="r") -> fsspec.core.OpenFile:
     if "file" == locfs.loc.scheme and "w" in mode:
