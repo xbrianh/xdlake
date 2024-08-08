@@ -33,7 +33,7 @@ class _JSONEncoder(json.JSONEncoder):
         if isinstance(o, (datetime.date, datetime.datetime)):
             return o.isoformat()
         elif isinstance(o, bytes):
-            return repr(o.decode("raw_unicode_escape"))
+            return repr(o.decode("raw_unicode_escape", "backslashreplace"))
         return super().default(o)
 
 class _DeltaLogAction:
