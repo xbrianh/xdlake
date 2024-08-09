@@ -1,6 +1,8 @@
 import functools
 import operator
 from uuid import uuid4
+from collections import defaultdict
+from typing import Iterable
 
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -82,6 +84,51 @@ class Writer:
         ds = dataset_utils.union_dataset(data)
         schema = writer.evaluate_schema(ds.schema)
         new_add_actions = writer.write_data(ds, write_arrow_dataset_options)
+        writer.write_deltalog_entry(schema, new_add_actions)
+
+    def _add_actions_for_foreign_dataset(
+        self,
+        ds: pa.dataset.FileSystemDataset,
+    ) -> list[delta_log.Add]:
+        scheme_map = {
+            "py::fsspec+('s3', 's3a')": "s3://",
+            "local": "file://",
+        }
+
+        add_actions = list()
+        for fragment in ds.get_fragments():
+            md = pa.parquet.ParquetFile(fragment.path, filesystem=ds.filesystem).metadata
+            stats = delta_log.Statistics.from_parquet_file_metadata(md)
+            url = f"{scheme_map[ds.filesystem.type_name]}{fragment.path}"
+            info = ds.filesystem.get_file_info(fragment.path)
+            partition_values = pyarrow.dataset.get_partition_keys(fragment.partition_expression)
+            add_actions.append(
+                delta_log.Add(
+                    path=url,
+                    modificationTime=utils.timestamp(),
+                    size=info.size,
+                    stats=stats.json(),
+                    partitionValues=partition_values,
+                )
+            )
+
+        return add_actions
+
+    @classmethod
+    def import_refs(
+        cls,
+        loc: str | storage.Location | storage.StorageObject,
+        refs: str | Iterable[str] | storage.StorageObject | pa.Table | pa.RecordBatch | pa.dataset.Dataset,
+        **kwargs,
+    ):
+        writer = cls(loc, **kwargs)
+        if writer._error_and_ignore:
+            return
+        ds = dataset_utils.union_dataset(refs)
+        schema = writer.evaluate_schema(ds.schema)
+        new_add_actions = list()
+        for child_ds in ds.children:
+            new_add_actions.extend(writer._add_actions_for_foreign_dataset(child_ds))
         writer.write_deltalog_entry(schema, new_add_actions)
 
     def evaluate_schema(self, pyarrow_schema: pa.Schema) -> delta_log.Schema:
@@ -193,22 +240,38 @@ class DeltaTable:
         # TODO add min/max and other info to partition expression to help pyarrow do filtering
 
         fragment = self.pyarrow_file_format.make_fragment(
-            self.so.append_path(add.path).path,
+            add.path,
             partition_expression=partition_expression,
             filesystem=filesystem,
         )
 
         return fragment
 
+    def resolve_add_paths(self) -> dict[str, list[delta_log.Add]]:
+        schemes = defaultdict(list)
+        for path, add in self.adds.items():
+            is_absolute = "://" in path
+            if is_absolute:
+                sob = storage.StorageObject.with_location(path)
+            else:
+                sob = self.so.append_path(path)
+                add.path = sob.path
+            schemes[sob.loc.scheme].append(add)
+        return dict(schemes)
+
     def to_pyarrow_dataset(self) -> pyarrow.dataset.Dataset:
-        fs = self.so.pyarrow_py_filesystem()
-        fragments = [
-            self.add_action_to_fragment(add, fs)
-            for _, add in self.adds.items()
-        ]
-        return pyarrow.dataset.FileSystemDataset(
-            fragments,
-            self.dlog.schema().to_pyarrow_schema(),
-            self.pyarrow_file_format,
-            fs,
-        )
+        datasets = list()
+        for scheme, adds in self.resolve_add_paths().items():
+            fs = storage.get_pyarrow_py_filesystem(scheme)
+            fragments = [
+                self.add_action_to_fragment(add, fs)
+                for add in adds
+            ]
+            ds = pyarrow.dataset.FileSystemDataset(
+                fragments,
+                self.dlog.schema().to_pyarrow_schema(),
+                self.pyarrow_file_format,
+                fs,
+            )
+            datasets.append(ds)
+        return pa.dataset.dataset(datasets)

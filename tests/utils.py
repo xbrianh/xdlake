@@ -54,7 +54,7 @@ class TableGen:
         self.columns = list(deltatable_types)
         self.categoricals = {
             "cats": ["S", "A", "D"],
-            "bats": ["F", "G", "H"],
+            "bats": [1, 2, 3],
         }
         self.order_parm = 0
 
@@ -76,7 +76,8 @@ class TableGen:
         self.order_parm += len(t)
 
         for name, choices in self.categoricals.items():
-            t = t.append_column(name, [random.choice(choices) for _ in range(len(t))])
+            d = [random.choice(choices) for _ in range(len(t))]
+            t = t.append_column(name, [d])
         t = t.append_column("order", pa.array(order, pa.float64()))
         return t
 
@@ -120,7 +121,7 @@ class TableGenMixin:
         return [self.gen_table(additional_cols=additional_cols)
                 for _ in range(num_tables)]
 
-    def _gen_parquets(self, location, **kwargs) -> dict[str, pa.Table | list[str]]:
+    def _gen_parquets(self, location, **kwargs) -> tuple[pa.Table, list[str]]:
         if location.startswith("s3://"):
             fs = xdlake.storage.get_filesystem("s3")
         else:
@@ -142,12 +143,12 @@ class TableGenMixin:
             **kwargs
         )
 
-        return {"table": t, "written_files": written_files}
+        return t, written_files
 
     def gen_parquets(self, *, locations, **kwargs) -> tuple[list[pa.Table], list[str]]:
         tables, paths = list(), list()
         for loc in locations:
-            info = self._gen_parquets(loc, **kwargs)
-            tables.append(info["table"])
-            paths.extend(info["written_files"])
+            t, files = self._gen_parquets(loc, **kwargs)
+            tables.append(t)
+            paths.extend(files)
         return tables, paths

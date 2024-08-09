@@ -4,6 +4,7 @@ from contextlib import nullcontext
 from uuid import uuid4
 
 import pyarrow as pa
+import pyarrow.dataset
 
 import xdlake
 
@@ -128,6 +129,47 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
             for batch in ds.to_batches():
                 xdlake.Writer.write(loc, batch, partition_by=["cats"])
             assert_arrow_table_equal(expected, xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table())
+
+    def test_import_refs(self):
+        loc = f"{self.scratch_folder}/{uuid4()}"
+
+        paths = [os.path.join(f"{self.scratch_folder}", f"{uuid4()}", f"{uuid4()}.parquet") for _ in range(3)]
+        paths += [f"s3://test-xdlake/{uuid4()}.parquet" for _ in range(3)]
+        tables, written_files = self.gen_parquets(locations=paths)
+
+        xdlake.Writer.import_refs(loc, written_files)
+
+        assert_arrow_table_equal(
+            pa.concat_tables(tables),
+            xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table()
+        )
+
+    def test_import_refs_with_partitions(self):
+        partitionings = {
+            "hive": pyarrow.dataset.partitioning(flavor="hive", schema=pa.schema([("cats", pa.string()), ("bats", pa.int64()), ("bool_", pa.bool_())])),
+            "filename": pyarrow.dataset.partitioning(flavor="filename", schema=pa.schema([("cats", pa.string()), ("bats", pa.int64())])),
+            None: pyarrow.dataset.partitioning(flavor=None, schema=pa.schema([("cats", pa.string()), ("bats", pa.int64())])),
+        }
+
+        datasets = list()
+        tables = list()
+        for flavor, partitioning in partitionings.items():
+            foreign_refs_loc = os.path.join(f"{self.scratch_folder}", f"{uuid4()}")
+            new_tables, written_files = self.gen_parquets(
+                locations=[foreign_refs_loc],
+                partitioning=partitioning,
+            )
+            tables.extend(new_tables)
+            ds = pyarrow.dataset.dataset(written_files, partitioning=partitioning, partition_base_dir=foreign_refs_loc)
+            datasets.append(ds)
+
+        loc = f"{self.scratch_folder}/{uuid4()}"
+        xdlake.Writer.import_refs(loc, datasets, partition_by=["cats", "bats"])
+
+        assert_arrow_table_equal(
+            pa.concat_tables(tables),
+            xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table()
+        )
 
 
 if __name__ == '__main__':

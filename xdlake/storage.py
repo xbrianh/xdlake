@@ -52,6 +52,10 @@ class Location:
 def get_filesystem(scheme: str, storage_options: dict | None = None) -> fsspec.AbstractFileSystem:
     return fsspec.filesystem(scheme, **(storage_options or dict()))
 
+def get_pyarrow_py_filesystem(scheme: str, storage_options: dict | None = None) -> pyarrow.fs.PyFileSystem:
+    fs = get_filesystem(scheme, storage_options)
+    return pyarrow.fs.PyFileSystem(pyarrow.fs.FSSpecHandler(fs))
+
 class StorageObject(NamedTuple):
     loc: Location
     fs: fsspec.AbstractFileSystem

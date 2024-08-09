@@ -120,6 +120,11 @@ class Schema(_DeltaLogAction):
         merged_schema = pa.unify_schemas([a, b])
         return type(self).from_pyarrow_schema(merged_schema)
 
+    def __eq__(self, o):
+        a_fields = sorted(self.fields, key=lambda x: x["name"])
+        b_fields = sorted(o.fields, key=lambda x: x["name"])
+        return a_fields == b_fields
+
 @dataclass
 class TableMetadata(_DeltaLogAction):
     schemaString: str
@@ -382,7 +387,7 @@ class DeltaLog:
             cols = self.entries[v].partition_columns()
             if cols is not None:
                 return cols
-        raise ValueError("No partition by found in log entries")
+        raise ValueError("No partitions found in log entries")
 
 def generate_remove_acctions(add_actions: Iterable[Add]) -> list[Remove]:
     remove_actions = list()
