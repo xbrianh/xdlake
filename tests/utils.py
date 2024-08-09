@@ -120,8 +120,8 @@ class TableGenMixin:
         return [self.gen_table(additional_cols=additional_cols)
                 for _ in range(num_tables)]
 
-    def gen_parquets_for_table(self, table_loc, **kwargs) -> dict:
-        if table_loc.startswith("s3://"):
+    def _gen_parquets(self, location, **kwargs) -> dict[str, pa.Table | list[str]]:
+        if location.startswith("s3://"):
             fs = xdlake.storage.get_filesystem("s3")
         else:
             fs = xdlake.storage.get_filesystem("file")
@@ -135,7 +135,7 @@ class TableGenMixin:
 
         pa.dataset.write_dataset(
             t,
-            table_loc,
+            location,
             format="parquet",
             filesystem=fs,
             file_visitor=visitor,
@@ -144,10 +144,10 @@ class TableGenMixin:
 
         return {"table": t, "written_files": written_files}
 
-    def gen_parquets_for_tables(self, *, table_locs, **kwargs):
+    def gen_parquets(self, *, locations, **kwargs) -> tuple[list[pa.Table], list[str]]:
         tables, paths = list(), list()
-        for loc in table_locs:
-            info = self.gen_parquets_for_table(loc, **kwargs)
+        for loc in locations:
+            info = self._gen_parquets(loc, **kwargs)
             tables.append(info["table"])
             paths.extend(info["written_files"])
         return tables, paths
