@@ -5,8 +5,6 @@ from uuid import uuid4
 from tempfile import TemporaryDirectory
 
 from xdlake import storage
-from fsspec.implementations.local import LocalFileSystem
-from s3fs.core import S3FileSystem
 
 
 class TestStorage(unittest.TestCase):
@@ -28,13 +26,13 @@ class TestStorage(unittest.TestCase):
         ]
         for test_name, url, expected_path in tests:
             with self.subTest(test_name):
-                sob = storage.StorageObject.with_location(url)
-                new_loc = sob.append_path("foo", name)
+                loc = storage.Location.with_location(url)
+                new_loc = loc.append_path("foo", name)
                 self.assertEqual(new_loc.path, expected_path)
                 d = os.urandom(7)
-                with storage.open(new_loc, mode="wb") as fh:
+                with new_loc.open(mode="wb") as fh:
                     fh.write(d)
-                with storage.open(new_loc, mode="rb") as fh:
+                with new_loc.open(mode="rb") as fh:
                     self.assertEqual(fh.read(), d)
 
     def test_listing(self):
@@ -42,8 +40,8 @@ class TestStorage(unittest.TestCase):
         for name in names:
             with open(f"{self.scratch_folder}/{name}", "wb") as fh:
                 fh.write(os.urandom(7))
-        loc = storage.StorageObject.with_location(self.scratch_folder)
-        self.assertEqual(sorted(names), [so.loc.basename() for so in loc.list_files_sorted()])
+        loc = storage.Location.with_location(self.scratch_folder)
+        self.assertEqual(sorted(names), [lloc.basename() for lloc in loc.list_files_sorted()])
 
     def test_register_filesystem(self):
         tests = [

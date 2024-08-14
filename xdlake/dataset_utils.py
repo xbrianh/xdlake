@@ -7,7 +7,7 @@ import pyarrow as pa
 from xdlake import storage
 
 
-RESOLVABLE = Union[str | storage.StorageObject | pa.Table | pa.RecordBatch | pa.dataset.Dataset]
+RESOLVABLE = Union[str | pa.Table | pa.RecordBatch | pa.dataset.Dataset]
 
 
 def intersect_schemas(schemas) -> pa.Schema:
@@ -37,19 +37,19 @@ def fragments_to_dataset(fragments: list[pa.Table | pa.RecordBatch], schema_mode
 
     return pa.dataset.dataset(datasets, schema=schema)
 
-def sobs_to_datasets(schema_to_sobs: dict[str, list[storage.StorageObject]], schema_mode: str) -> list[pa.dataset.FileSystemDataset]:
+def locations_to_datasets(schema_to_locations: dict[str, list[storage.Location]], schema_mode: str) -> list[pa.dataset.FileSystemDataset]:
     datasets = list()
-    for scheme, sobs in schema_to_sobs.items():
-        fs = sobs[0].fs
+    for scheme, locations in schema_to_locations.items():
+        fs = locations[0].fs
 
-        schemas = [pa.parquet.ParquetFile(sob.path, filesystem=fs).schema.to_arrow_schema()
-                   for sob in sobs]
+        schemas = [pa.parquet.ParquetFile(loc.path, filesystem=fs).schema.to_arrow_schema()
+                   for loc in locations]
         if "merge" == schema_mode:
             schema = pa.unify_schemas(schemas)
         else:
             schema = intersect_schemas(schemas)
 
-        ds = pa.dataset.dataset([so.loc.path for so in sobs], schema=schema, filesystem=fs)
+        ds = pa.dataset.dataset([loc.path for loc in locations], schema=schema, filesystem=fs)
         datasets.append(ds)
     return datasets
 
@@ -59,17 +59,17 @@ def union_dataset(data: RESOLVABLE | Iterable[RESOLVABLE], schema_mode: str = "c
 
     datasets = list()
     fragments = list()
-    sobs = defaultdict(list)
+    locations = defaultdict(list)
 
     for item in data:
         match item:
             case pa.Table() | pa.RecordBatch():
                 fragments.append(item)
             case str():
-                sob = storage.StorageObject.with_location(item)
-                sobs[sob.loc.scheme].append(sob)
-            case storage.StorageObject():
-                sobs[item.loc.scheme].append(item)
+                loc = storage.Location.with_location(item)
+                locations[loc.scheme].append(loc)
+            case storage.Location():
+                locations[item.scheme].append(item)
             case pa.dataset.Dataset():
                 datasets.append(item)
             case _:
@@ -77,8 +77,8 @@ def union_dataset(data: RESOLVABLE | Iterable[RESOLVABLE], schema_mode: str = "c
 
     if fragments:
         datasets.append(fragments_to_dataset(fragments, schema_mode))
-    if sobs:
-        datasets.extend(sobs_to_datasets(sobs, schema_mode))
+    if locations:
+        datasets.extend(locations_to_datasets(locations, schema_mode))
 
     schema = None
     if "merge" == schema_mode:

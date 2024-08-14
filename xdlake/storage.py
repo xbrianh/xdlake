@@ -1,6 +1,6 @@
 import os
 from urllib.parse import urlparse
-from typing import Any, Generator, NamedTuple
+from typing import Any, Generator
 
 import fsspec
 import pyarrow.fs
@@ -15,7 +15,7 @@ def register_filesystem(pfx: str, fs: fsspec.AbstractFileSystem):
 def unregister_filesystem(pfx: str):
     del _filesystems[pfx]
 
-def get_filesystem(url: str) -> fsspec.AbstractFileSystem:
+def get_filesystem(url: str, storage_options: dict | None = None) -> fsspec.AbstractFileSystem:
     parsed = urlparse(url)
     protocol = parsed.scheme
     if not protocol:
@@ -35,18 +35,21 @@ def get_filesystem(url: str) -> fsspec.AbstractFileSystem:
     if match_pfx:
         return _filesystems[match_pfx]
     else:
-        return fsspec.filesystem(protocol)
+        return fsspec.filesystem(protocol, **(storage_options or dict()))
 
 
 class Location:
-    def __init__(self, scheme: str, path: str):
+    def __init__(self, scheme: str, path: str, storage_options: dict | None = None):
         self.scheme = scheme
         self.path = path
         self.url = f"{self.scheme}://{self.path}"
+        self.storage_options = storage_options
 
     @classmethod
-    def with_loc(cls, loc: str | Any) -> "Location":
+    def with_location(cls, loc: str | Any, storage_options: dict | None = None) -> "Location":
         if isinstance(loc, cls):
+            if storage_options:
+                loc.storage_options = storage_options
             return loc
         elif not isinstance(loc, str):
             raise TypeError(f"Cannot handle storage location '{loc}'")
@@ -59,7 +62,11 @@ class Location:
                 path = os.path.abspath(parsed.path)
         else:
             path = loc
-        return cls(scheme, path)
+        return cls(scheme, path, storage_options=storage_options)
+
+    @property
+    def fs(self):
+        return get_filesystem(self.url, storage_options=self.storage_options)
 
     def append_path(self, *path_components) -> "Location":
         if "file" == self.scheme:
@@ -80,56 +87,31 @@ class Location:
         else:
             return self.path.rsplit("/", 1)[-1]
 
-def get_pyarrow_py_filesystem(scheme: str, storage_options: dict | None = None) -> pyarrow.fs.PyFileSystem:
-    fs = fsspec.filesystem(scheme, **(storage_options or dict()))
-    return pyarrow.fs.PyFileSystem(pyarrow.fs.FSSpecHandler(fs))
-
-class StorageObject(NamedTuple):
-    loc: Location
-
-    @property
-    def fs(self):
-        return get_filesystem(self.loc.url)
-
-    def append_path(self, *path_components):
-        return type(self)(self.loc.append_path(*path_components))
-
-    @property
-    def path(self):
-        return self.loc.path
-
     def exists(self) -> bool:
         return self.fs.exists(self.path)
 
     def mkdir(self):
         self.fs.mkdir(self.path)
 
-    def list_files(self) -> Generator["StorageObject", None, None]:
-        for info in self.fs.ls(self.loc.path, detail=True):
+    def list_files(self) -> Generator["Location", None, None]:
+        for info in self.fs.ls(self.path, detail=True):
             if "file" == info["type"]:
-                yield type(self)(Location(self.loc.scheme, info["name"]))
+                yield type(self)(self.scheme, info["name"], storage_options=self.storage_options)
 
-    def list_files_sorted(self) -> list["StorageObject"]:
+    def list_files_sorted(self) -> list["Location"]:
         # TODO don't sort for s3 or gcs
-        return sorted([so for so in self.list_files()], key=lambda i: i.path)
+        return sorted([loc for loc in self.list_files()], key=lambda i: i.path)
 
-    @classmethod
-    def with_location(cls, loc, storage_options: dict | None = None) -> "StorageObject":
-        if isinstance(loc, cls):
-            return loc
-        else:
-            loc = Location.with_loc(loc)
-        return cls(loc)
+    def open(self, mode: str="r") -> fsspec.core.OpenFile:
+        if "file" == self.scheme and "w" in mode:
+            folder = self.dirname()
+            if self.fs.exists(folder):
+                if not self.fs.isdir(folder):
+                    raise FileExistsError(self.path)
+            else:
+                self.fs.mkdir(folder)
+        return self.fs.open(self.path, mode)
 
-    def pyarrow_py_filesystem(self) -> pyarrow.fs.PyFileSystem:
-        return pyarrow.fs.PyFileSystem(pyarrow.fs.FSSpecHandler(self.fs))
-
-def open(locfs: StorageObject, mode: str="r") -> fsspec.core.OpenFile:
-    if "file" == locfs.loc.scheme and "w" in mode:
-        folder = locfs.loc.dirname()
-        if locfs.fs.exists(folder):
-            if not locfs.fs.isdir(folder):
-                raise FileExistsError(locfs.loc.path)
-        else:
-            locfs.fs.mkdir(folder)
-    return locfs.fs.open(locfs.loc.path, mode)
+def get_pyarrow_py_filesystem(scheme: str, storage_options: dict | None = None) -> pyarrow.fs.PyFileSystem:
+    fs = fsspec.filesystem(scheme, **(storage_options or dict()))
+    return pyarrow.fs.PyFileSystem(pyarrow.fs.FSSpecHandler(fs))

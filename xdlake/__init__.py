@@ -13,17 +13,17 @@ from xdlake import delta_log, dataset_utils, storage, utils
 
 
 def read_delta_log(
-    loc: str | storage.Location | storage.StorageObject,
+    loc: str | storage.Location,
     version: int | None = None,
     storage_options: dict | None = None,
 ) -> delta_log.DeltaLog:
-    so = storage.StorageObject.with_location(loc, storage_options)
+    loc = storage.Location.with_location(loc, storage_options=storage_options)
     dlog = delta_log.DeltaLog()
-    if not so.exists():
+    if not loc.exists():
         return dlog
-    for entry_lfs in so.list_files_sorted():
-        entry_version = int(entry_lfs.loc.basename().split(".")[0])
-        with storage.open(entry_lfs) as fh:
+    for entry_loc in loc.list_files_sorted():
+        entry_version = int(entry_loc.basename().split(".")[0])
+        with entry_loc.open() as fh:
             dlog[entry_version] = delta_log.DeltaLogEntry(fh)
         if version in dlog:
             break
@@ -32,22 +32,22 @@ def read_delta_log(
 class Writer:
     def __init__(
         self,
-        loc: str | storage.Location | storage.StorageObject,
-        log_loc: str | storage.Location | storage.StorageObject | None = None,
+        loc: str | storage.Location,
+        log_loc: str | storage.Location | None = None,
         mode: str | delta_log.WriteMode = delta_log.WriteMode.append.name,
         schema_mode: str = "overwrite",
         partition_by: list | None = None,
         storage_options: dict | None = None,
     ):
-        self.so = storage.StorageObject.with_location(loc, storage_options)
+        self.loc = storage.Location.with_location(loc, storage_options=storage_options)
         if log_loc is None:
-            self.log_so = self.so.append_path("_delta_log")
+            self.log_loc = self.loc.append_path("_delta_log")
         else:
-            self.log_so = storage.StorageObject.with_location(log_loc, storage_options)
+            self.log_loc = storage.Location.with_location(log_loc, storage_options=storage_options)
         self.mode = delta_log.WriteMode[mode] if isinstance(mode, str) else mode
         self.schema_mode = schema_mode
         self.partition_by = partition_by or list()
-        self.dlog = read_delta_log(self.log_so)
+        self.dlog = read_delta_log(self.log_loc)
         self._error_and_ignore = False
 
         if self.dlog.version is None:
@@ -73,7 +73,7 @@ class Writer:
     @classmethod
     def write(
         cls,
-        loc: str | storage.Location | storage.StorageObject,
+        loc: str | storage.Location,
         data: pa.Table | pa.dataset.Dataset | pa.RecordBatch,
         write_arrow_dataset_options: dict | None = None,
         **kwargs,
@@ -119,8 +119,8 @@ class Writer:
     @classmethod
     def import_refs(
         cls,
-        loc: str | storage.Location | storage.StorageObject,
-        refs: str | Iterable[str] | storage.StorageObject | pa.Table | pa.RecordBatch | pa.dataset.Dataset,
+        loc: str | storage.Location,
+        refs: str | Iterable[str] | storage.Location | pa.Table | pa.RecordBatch | pa.dataset.Dataset,
         **kwargs,
     ):
         writer = cls(loc, **kwargs)
@@ -149,15 +149,15 @@ class Writer:
     def write_deltalog_entry(self, schema: delta_log.Schema, add_actions: list[delta_log.Add]):
         new_entry = delta_log.DeltaLogEntry()
         if 0 == self.version_to_write:
-            new_entry = delta_log.DeltaLogEntry.CreateTable(self.log_so.path, schema, self.partition_by, add_actions)
-            self.log_so.mkdir()
+            new_entry = delta_log.DeltaLogEntry.CreateTable(self.log_loc.path, schema, self.partition_by, add_actions)
+            self.log_loc.mkdir()
         elif delta_log.WriteMode.append == self.mode:
             new_entry = delta_log.DeltaLogEntry.AppendTable(self.partition_by, add_actions, schema)
         elif delta_log.WriteMode.overwrite == self.mode:
             existing_add_actions = self.dlog.add_actions().values()
             new_entry = delta_log.DeltaLogEntry.OverwriteTable(self.partition_by, existing_add_actions, add_actions)
 
-        with storage.open(self.log_so.append_path(f"{self.version_to_write:020}.json"), "w") as fh:
+        with self.log_loc.append_path(f"{self.version_to_write:020}.json").open(mode="w") as fh:
             new_entry.write(fh)
 
     def write_data(self, ds: pa.dataset.Dataset, write_arrow_dataset_options: dict | None = None) -> list[delta_log.Add]:
@@ -168,7 +168,7 @@ class Writer:
                 pa.parquet.ParquetFile(visited_file.path).metadata
             )
 
-            relpath = visited_file.path.replace(self.so.path, "").strip("/")
+            relpath = visited_file.path.replace(self.loc.path, "").strip("/")
             partition_values = dict()
 
             for part in relpath.split("/"):
@@ -180,7 +180,7 @@ class Writer:
                 delta_log.Add(
                     path=relpath,
                     modificationTime=utils.timestamp(),
-                    size=self.so.fs.size(visited_file.path),
+                    size=self.loc.fs.size(visited_file.path),
                     stats=stats.json(),
                     partitionValues=partition_values
                 )
@@ -193,9 +193,9 @@ class Writer:
 
         pa.dataset.write_dataset(
             ds,
-            self.so.path,
+            self.loc.path,
             format="parquet",
-            filesystem=self.so.fs,
+            filesystem=self.loc.fs,
             basename_template=f"{self.version_to_write}-{uuid4()}-{{i}}.parquet",
             file_visitor=visitor,
             existing_data_behavior="overwrite_or_ignore",
@@ -207,16 +207,16 @@ class Writer:
 class DeltaTable:
     def __init__(
         self,
-        loc: str | storage.Location | storage.StorageObject,
-        log_loc: str | storage.Location | storage.StorageObject | None = None,
+        loc: str | storage.Location,
+        log_loc: str | storage.Location | None = None,
         storage_options: dict | None = None,
     ):
-        self.so = storage.StorageObject.with_location(loc, storage_options)
+        self.loc = storage.Location.with_location(loc, storage_options=storage_options)
         if log_loc is None:
-            self.log_so = self.so.append_path("_delta_log")
+            self.log_loc = self.loc.append_path("_delta_log")
         else:
-            self.log_so = storage.StorageObject.with_location(log_loc, storage_options)
-        self.dlog = read_delta_log(self.log_so)
+            self.log_loc = storage.Location.with_location(log_loc, storage_options=storage_options)
+        self.dlog = read_delta_log(self.log_loc)
         self.adds = self.dlog.add_actions()
         self.partition_columns = self.dlog.partition_columns()
         self.pyarrow_file_format = pyarrow.dataset.ParquetFileFormat(
@@ -254,11 +254,11 @@ class DeltaTable:
         for path, add in self.adds.items():
             is_absolute = "://" in path
             if is_absolute:
-                sob = storage.StorageObject.with_location(path)
+                loc = storage.Location.with_location(path)
             else:
-                sob = self.so.append_path(path)
-                add.path = sob.path
-            filesystems[storage.get_filesystem(sob.loc.url)].append(add)
+                loc = self.loc.append_path(path)
+                add.path = loc.path
+            filesystems[storage.get_filesystem(loc.url)].append(add)
         return dict(filesystems)
 
     def to_pyarrow_dataset(self) -> pyarrow.dataset.Dataset:

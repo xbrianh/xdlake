@@ -52,14 +52,14 @@ class TestDataset(TableGenMixin, unittest.TestCase):
 
     def test_paths_with_different_schema(self):
         new_col_name = f"{uuid4()}"[:6]
-        loc = storage.StorageObject.with_location(f"s3://test-xdlake/{uuid4()}")
+        loc = storage.Location.with_location(f"s3://test-xdlake/{uuid4()}")
         tables = {loc.append_path(f"{uuid4()}.parquet"): self.gen_table()
                   for _ in range(2)}
         tables[loc.append_path(f"{uuid4()}.parquet")] = self.gen_table(additional_cols=new_col_name)
         for filepath in tables:
             pa.parquet.write_table(tables[filepath], filepath.path, filesystem=loc.fs)
 
-        paths = [sob for sob in storage.StorageObject.with_location(loc).list_files()]
+        paths = [sob for sob in storage.Location.with_location(loc).list_files()]
 
         with self.subTest("common schema"):
             ds = dataset_utils.union_dataset(paths)
