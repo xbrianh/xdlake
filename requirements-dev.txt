@@ -2,4 +2,6 @@ pandas
 deltalake
 ruff-lsp
 mypy
+gcsfs
+s3fs
 -r requirements.txt

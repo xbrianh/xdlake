@@ -6,12 +6,43 @@ import fsspec
 import pyarrow.fs
 
 
-class Location:
-    _filesystem: dict = dict()
+_filesystems = dict()
 
+
+def register_filesystem(pfx: str, fs: fsspec.AbstractFileSystem):
+    _filesystems[pfx] = fs
+
+def unregister_filesystem(pfx: str):
+    del _filesystems[pfx]
+
+def get_filesystem(url: str) -> fsspec.AbstractFileSystem:
+    parsed = urlparse(url)
+    protocol = parsed.scheme
+    if not protocol:
+        protocol = "file"
+        if parsed.path.startswith(os.path.sep):
+            path = parsed.path
+        else:
+            path = os.path.abspath(parsed.path)
+        url = f"{protocol}://{path}"
+
+    match_pfx = None
+    for pfx in _filesystems:
+        if url.startswith(pfx):
+            if match_pfx is None or len(pfx) > len(match_pfx):
+                match_pfx = pfx
+
+    if match_pfx:
+        return _filesystems[match_pfx]
+    else:
+        return fsspec.filesystem(protocol)
+
+
+class Location:
     def __init__(self, scheme: str, path: str):
         self.scheme = scheme
         self.path = path
+        self.url = f"{self.scheme}://{self.path}"
 
     @classmethod
     def with_loc(cls, loc: str | Any) -> "Location":
@@ -49,19 +80,19 @@ class Location:
         else:
             return self.path.rsplit("/", 1)[-1]
 
-def get_filesystem(scheme: str, storage_options: dict | None = None) -> fsspec.AbstractFileSystem:
-    return fsspec.filesystem(scheme, **(storage_options or dict()))
-
 def get_pyarrow_py_filesystem(scheme: str, storage_options: dict | None = None) -> pyarrow.fs.PyFileSystem:
-    fs = get_filesystem(scheme, storage_options)
+    fs = fsspec.filesystem(scheme, **(storage_options or dict()))
     return pyarrow.fs.PyFileSystem(pyarrow.fs.FSSpecHandler(fs))
 
 class StorageObject(NamedTuple):
     loc: Location
-    fs: fsspec.AbstractFileSystem
+
+    @property
+    def fs(self):
+        return get_filesystem(self.loc.url)
 
     def append_path(self, *path_components):
-        return type(self)(self.loc.append_path(*path_components), self.fs)
+        return type(self)(self.loc.append_path(*path_components))
 
     @property
     def path(self):
@@ -76,7 +107,7 @@ class StorageObject(NamedTuple):
     def list_files(self) -> Generator["StorageObject", None, None]:
         for info in self.fs.ls(self.loc.path, detail=True):
             if "file" == info["type"]:
-                yield type(self)(Location(self.loc.scheme, info["name"]), self.fs)
+                yield type(self)(Location(self.loc.scheme, info["name"]))
 
     def list_files_sorted(self) -> list["StorageObject"]:
         # TODO don't sort for s3 or gcs
@@ -88,8 +119,7 @@ class StorageObject(NamedTuple):
             return loc
         else:
             loc = Location.with_loc(loc)
-            fs = get_filesystem(loc.scheme, storage_options)
-        return cls(loc, fs)
+        return cls(loc)
 
     def pyarrow_py_filesystem(self) -> pyarrow.fs.PyFileSystem:
         return pyarrow.fs.PyFileSystem(pyarrow.fs.FSSpecHandler(self.fs))

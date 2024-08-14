@@ -1,3 +1,2 @@
 pyarrow
 fsspec
-s3fs

@@ -90,8 +90,10 @@ class Writer:
         self,
         ds: pa.dataset.FileSystemDataset,
     ) -> list[delta_log.Add]:
+        # TODO: is there a better way to find protocl? this looks potentially flaky
         scheme_map = {
             "py::fsspec+('s3', 's3a')": "s3://",
+            "py::fsspec+('gs', 'gcs')": "gs://",
             "local": "file://",
         }
 
@@ -247,8 +249,8 @@ class DeltaTable:
 
         return fragment
 
-    def resolve_add_paths(self) -> dict[str, list[delta_log.Add]]:
-        schemes = defaultdict(list)
+    def resolve_adds(self) -> dict[str, list[delta_log.Add]]:
+        filesystems = defaultdict(list)
         for path, add in self.adds.items():
             is_absolute = "://" in path
             if is_absolute:
@@ -256,22 +258,22 @@ class DeltaTable:
             else:
                 sob = self.so.append_path(path)
                 add.path = sob.path
-            schemes[sob.loc.scheme].append(add)
-        return dict(schemes)
+            filesystems[storage.get_filesystem(sob.loc.url)].append(add)
+        return dict(filesystems)
 
     def to_pyarrow_dataset(self) -> pyarrow.dataset.Dataset:
         datasets = list()
-        for scheme, adds in self.resolve_add_paths().items():
-            fs = storage.get_pyarrow_py_filesystem(scheme)
+        for fs, adds in self.resolve_adds().items():
+            pyfs = pyarrow.fs.PyFileSystem(pyarrow.fs.FSSpecHandler(fs))
             fragments = [
-                self.add_action_to_fragment(add, fs)
+                self.add_action_to_fragment(add, pyfs)
                 for add in adds
             ]
             ds = pyarrow.dataset.FileSystemDataset(
                 fragments,
                 self.dlog.schema().to_pyarrow_schema(),
                 self.pyarrow_file_format,
-                fs,
+                pyfs,
             )
             datasets.append(ds)
         return pa.dataset.dataset(datasets)

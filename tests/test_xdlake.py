@@ -112,6 +112,18 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
             xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table()
         )
 
+    def test_gs(self):
+        loc = f"gs://test-xdlake/tests/{uuid4()}"
+        tables = [self.gen_table() for _ in range(3)]
+
+        for t in tables:
+            xdlake.Writer.write(loc, t, partition_by=["cats"])
+
+        assert_arrow_table_equal(
+            pa.concat_tables(tables),
+            xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table()
+        )
+
     def test_write_kind(self):
         tables, paths = self.gen_parquets(
             locations=[os.path.join(f"{self.scratch_folder}", f"{uuid4()}.parquet") for _ in range(3)]
@@ -154,13 +166,18 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
         datasets = list()
         tables = list()
         for flavor, partitioning in partitionings.items():
-            foreign_refs_loc = os.path.join(f"{self.scratch_folder}", f"{uuid4()}")
+            foreign_refs_loc = f"gs://test-xdlake/{uuid4()}"  # os.path.join(f"{self.scratch_folder}", f"{uuid4()}")
             new_tables, written_files = self.gen_parquets(
                 locations=[foreign_refs_loc],
                 partitioning=partitioning,
             )
             tables.extend(new_tables)
-            ds = pyarrow.dataset.dataset(written_files, partitioning=partitioning, partition_base_dir=foreign_refs_loc)
+            ds = pyarrow.dataset.dataset(
+                written_files,
+                partitioning=partitioning,
+                partition_base_dir=foreign_refs_loc,
+                filesystem=xdlake.storage.get_filesystem(foreign_refs_loc),
+            )
             datasets.append(ds)
 
         loc = f"{self.scratch_folder}/{uuid4()}"

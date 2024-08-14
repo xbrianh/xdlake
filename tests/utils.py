@@ -122,10 +122,7 @@ class TableGenMixin:
                 for _ in range(num_tables)]
 
     def _gen_parquets(self, location, **kwargs) -> tuple[pa.Table, list[str]]:
-        if location.startswith("s3://"):
-            fs = xdlake.storage.get_filesystem("s3")
-        else:
-            fs = xdlake.storage.get_filesystem("file")
+        fs = xdlake.storage.get_filesystem(location)
 
         t = self.gen_table()
 
