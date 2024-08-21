@@ -24,7 +24,7 @@ def read_delta_log(
     for entry_loc in loc.list_files_sorted():
         entry_version = int(entry_loc.basename().split(".")[0])
         with entry_loc.open() as fh:
-            dlog[entry_version] = delta_log.DeltaLogEntry(fh)
+            dlog[entry_version] = delta_log.DeltaLogEntry.with_handle(fh)
         if version in dlog:
             break
     return dlog

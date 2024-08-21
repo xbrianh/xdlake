@@ -4,7 +4,7 @@ from enum import Enum
 from uuid import uuid4
 from collections import defaultdict
 from dataclasses import dataclass, asdict, field
-from typing import Iterable
+from typing import IO, Iterable
 
 import pyarrow as pa
 
@@ -247,11 +247,13 @@ class Remove(_DeltaLogAction):
     size: int
 
 class DeltaLogEntry:
-    def __init__(self, handle = None):
-        if handle is None:
-            self.actions = list()
-        else:
-            self.actions = [self.load_action(line) for line in handle]
+    def __init__(self, actions: list | None = None):
+        self.actions = actions or list()
+
+    @classmethod
+    def with_handle(cls, handle: IO):
+        actions = [cls.load_action(line) for line in handle]
+        return cls(actions)
 
     @staticmethod
     def load_action(obj: str | bytes | dict): 
