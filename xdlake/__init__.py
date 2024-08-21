@@ -229,11 +229,14 @@ class DeltaTable:
             default_fragment_scan_options=pyarrow.dataset.ParquetFragmentScanOptions(pre_buffer=True)
         )
 
-    @property
-    def version(self) -> int:
-        if not self.dlog:
-            return -1
-        return max(self.dlog.entries.keys())
+    def versions(self) -> list[int] | None:
+        if self.dlog.entries:
+            return list(self.dlog.entries.keys())
+        else:
+            return None
+
+    def load_as_version(self, version: int) -> "DeltaTable":
+        return type(self)(self.loc, self.log_loc, version=version)
 
     def add_action_to_fragment(self, add: delta_log.Add, filesystem: pa.fs.PyFileSystem) -> pa.dataset.Fragment:
         if self.partition_columns:

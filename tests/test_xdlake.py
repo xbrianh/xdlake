@@ -22,6 +22,7 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
 
         versions = [xdlake.Writer.write(loc, self.gen_table(), partition_by=["cats", "bats"]) for _ in range(3)]
         self.assertNotIn(None, versions)
+        self.assertEqual(versions, xdlake.DeltaTable(loc).versions())
 
         with self.subTest(mode="append"):
             df_expected = pa.concat_tables(self.tables)
@@ -36,8 +37,12 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
             df = xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table()
             assert_arrow_table_equal(t, df)
 
-        with self.subTest("roll back to version"):
+        with self.subTest("create as version"):
             df = xdlake.DeltaTable(loc, version=versions[-2]).to_pyarrow_dataset().to_table()
+            assert_arrow_table_equal(df_expected, df)
+
+        with self.subTest("load as version"):
+            df = xdlake.DeltaTable(loc).load_as_version(versions[-2]).to_pyarrow_dataset().to_table()
             assert_arrow_table_equal(df_expected, df)
 
 
