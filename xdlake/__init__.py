@@ -281,3 +281,36 @@ class DeltaTable:
             )
             datasets.append(ds)
         return pa.dataset.dataset(datasets)
+
+def clone(
+    src_loc: str | storage.Location,
+    dst_loc: str | storage.Location,
+    src_log_loc: str | None = None,
+    dst_log_loc: str | None = None,
+):
+    """Clone a DeltaTable
+
+    The cloned table contains add actions that reference files in the source table without copying data. Version history is preserved.
+
+    Args:
+        src_loc (str | Location): Location of the source table.
+        dst_loc (str | Location): Location of the destination table.
+        src_log_loc (str | None): Location of the source table's delta log if stored remotely.
+        dst_log_loc (str | None): Location of the destination table's delta log if stored remotely.
+    """
+    src_loc = storage.Location.with_location(src_loc)
+    dst_loc = storage.Location.with_location(dst_loc)
+    dst_dlog_loc = storage.Location.with_location(dst_log_loc or dst_loc.append_path("_delta_log"))
+    src_dlog = read_delta_log(src_log_loc or src_loc.append_path("_delta_log"))
+    for version, src_entry in src_dlog.entries.items():
+        dst_actions = list()
+        for src_action in src_entry.actions:
+            if isinstance(src_action, (delta_log.Add, delta_log.Remove)):
+                dst_action = src_action.replace(path=storage.absloc(src_action.path, src_loc).path)
+            elif isinstance(src_action, delta_log.TableCommit):
+                dst_action = src_action
+            else:
+                dst_action = src_action
+            dst_actions.append(dst_action)
+        with dst_dlog_loc.append_path(utils.filename_for_version(version)).open(mode="w") as fh:
+            delta_log.DeltaLogEntry(dst_actions).write(fh)

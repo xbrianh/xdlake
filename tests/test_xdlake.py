@@ -28,6 +28,7 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
             df_expected = pa.concat_tables(self.tables)
             df = xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table()
             assert_arrow_table_equal(df_expected, df)
+            self._test_clone(loc, df_expected)
 
         with self.subTest(mode="overwrite"):
             t = self.gen_table()
@@ -36,6 +37,7 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
             self.assertNotIn(None, versions)
             df = xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table()
             assert_arrow_table_equal(t, df)
+            self._test_clone(loc, t)
 
         with self.subTest("create as version"):
             df = xdlake.DeltaTable(loc, version=versions[-2]).to_pyarrow_dataset().to_table()
@@ -84,10 +86,13 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
             xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table(),
         )
 
+        self._test_clone(loc, pa.concat_tables(self.tables, promote_options="default"))
+
     def test_remote_log(self):
         tables = [self.gen_table() for _ in range(3)]
         expected = pa.concat_tables(tables)
         tests = [
+            (f"{self.scratch_folder}/{uuid4()}", f"{self.scratch_folder}/{uuid4()}"),
             (f"s3://test-xdlake/tests/{uuid4()}", f"{self.scratch_folder}/{uuid4()}"),
             (f"{self.scratch_folder}/{uuid4()}", f"s3://test-xdlake/tests/{uuid4()}"),
         ]
@@ -100,6 +105,7 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
                     expected,
                     xdlake.DeltaTable(data_loc, log_loc).to_pyarrow_dataset().to_table(),
                 )
+                self._test_clone(data_loc, expected, src_log_loc=log_loc)
 
     def test_write_mode_error_ignore(self):
         loc = f"{self.scratch_folder}/{uuid4()}"
@@ -129,6 +135,8 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
             xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table()
         )
 
+        self._test_clone(loc, pa.concat_tables(tables))
+
     def test_gs(self):
         loc = f"gs://test-xdlake/tests/{uuid4()}"
         tables = [self.gen_table() for _ in range(3)]
@@ -141,6 +149,8 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
             xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table()
         )
 
+        self._test_clone(loc, pa.concat_tables(tables))
+
     def test_write_kind(self):
         tables, paths = self.gen_parquets(
             locations=[os.path.join(f"{self.scratch_folder}", f"{uuid4()}.parquet") for _ in range(3)]
@@ -152,12 +162,14 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
             loc = f"{self.scratch_folder}/{uuid4()}"
             xdlake.Writer.write(loc, ds, partition_by=["cats"])
             assert_arrow_table_equal(expected, xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table())
+            self._test_clone(loc, pa.concat_tables(tables))
 
         with self.subTest("write pyarrow record batches"):
             loc = f"{self.scratch_folder}/{uuid4()}"
             for batch in ds.to_batches():
                 xdlake.Writer.write(loc, batch, partition_by=["cats"])
             assert_arrow_table_equal(expected, xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table())
+            self._test_clone(loc, pa.concat_tables(tables))
 
     def test_import_refs(self):
         loc = f"{self.scratch_folder}/{uuid4()}"
@@ -172,6 +184,8 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
             pa.concat_tables(tables),
             xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table()
         )
+
+        self._test_clone(loc, pa.concat_tables(tables))
 
     def test_import_refs_with_partitions(self):
         partitionings = {
@@ -204,6 +218,34 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
             pa.concat_tables(tables),
             xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table()
         )
+
+        self._test_clone(loc, pa.concat_tables(tables))
+
+    def test_clone(self):
+        src_loc = f"{self.scratch_folder}/{uuid4()}"
+        tables = [self.gen_table() for _ in range(3)]
+        df_expected = pa.concat_tables(self.tables)
+        for t in tables:
+            xdlake.Writer.write(src_loc, t, partition_by=["cats"])
+        df = xdlake.DeltaTable(src_loc).to_pyarrow_dataset().to_table()
+        assert_arrow_table_equal(df_expected, df)
+        self._test_clone(src_loc, df_expected)
+
+    def _test_clone(self, src_loc, expected_table, src_log_loc: str | None = None) -> str:
+        with self.subTest("clone to local"):
+            dst_loc = f"{self.scratch_folder}/{uuid4()}"
+            xdlake.clone(src_loc, dst_loc, src_log_loc=src_log_loc)
+            assert_arrow_table_equal(xdlake.DeltaTable(dst_loc).to_pyarrow_dataset().to_table(), expected_table)
+
+        tested_something = False
+        for version in xdlake.DeltaTable(src_loc, log_loc=src_log_loc).versions():
+            tested_something = True
+            with self.subTest("clone agrees", version=version):
+                assert_arrow_table_equal(
+                    xdlake.DeltaTable(src_loc, log_loc=src_log_loc, version=version).to_pyarrow_dataset().to_table(),
+                    xdlake.DeltaTable(dst_loc, version=version).to_pyarrow_dataset().to_table(),
+                )
+        self.assertTrue(tested_something)
 
 
 if __name__ == '__main__':
