@@ -3,7 +3,7 @@ import datetime
 from enum import Enum
 from uuid import uuid4
 from collections import defaultdict
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict, field, replace
 from typing import IO, Iterable
 
 import pyarrow as pa
@@ -42,6 +42,9 @@ class _DeltaLogAction:
 
     def json(self):
         return json.dumps(self.asdict(), cls=_JSONEncoder)
+
+    def replace(self, **kwargs):
+        return replace(self, **kwargs)
 
 @dataclass
 class Protocol(_DeltaLogAction):

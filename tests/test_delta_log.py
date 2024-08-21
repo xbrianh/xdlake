@@ -2,7 +2,7 @@ import os
 import unittest
 
 import xdlake
-from xdlake import delta_log
+from xdlake import delta_log, utils
 
 
 fixtures = os.path.abspath(os.path.join(os.path.dirname(__file__), "fixtures"))
@@ -33,6 +33,20 @@ class TestDeltaLog(unittest.TestCase):
         dlog = xdlake.read_delta_log(logdir)
         s = dlog.schema()
         self.assertEqual(s, expected)
+
+    def test_replace(self):
+        aa = delta_log.Add(
+            path="this_is_fake",
+            modificationTime=utils.timestamp(),
+            size=1,
+            stats={},
+            partitionValues=dict(),
+        )
+        new_path = "this is still fake"
+        new_size = 17
+        new_aa = aa.replace(path=new_path, size=new_size)
+        self.assertEqual(new_path, new_aa.path)
+        self.assertEqual(new_size, new_aa.size)
 
 
 if __name__ == "__main__":
