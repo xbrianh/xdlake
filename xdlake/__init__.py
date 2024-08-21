@@ -77,14 +77,14 @@ class Writer:
         data: pa.Table | pa.dataset.Dataset | pa.RecordBatch,
         write_arrow_dataset_options: dict | None = None,
         **kwargs,
-    ):
+    ) -> int | None:
         writer = cls(loc, **kwargs)
         if writer._error_and_ignore:
-            return
+            return None
         ds = dataset_utils.union_dataset(data)
         schema = writer.evaluate_schema(ds.schema)
         new_add_actions = writer.write_data(ds, write_arrow_dataset_options)
-        writer.write_deltalog_entry(schema, new_add_actions)
+        return writer.write_deltalog_entry(schema, new_add_actions)
 
     def _add_actions_for_foreign_dataset(
         self,
@@ -122,16 +122,16 @@ class Writer:
         loc: str | storage.Location,
         refs: str | Iterable[str] | storage.Location | pa.Table | pa.RecordBatch | pa.dataset.Dataset,
         **kwargs,
-    ):
+    ) -> int | None:
         writer = cls(loc, **kwargs)
         if writer._error_and_ignore:
-            return
+            return None
         ds = dataset_utils.union_dataset(refs)
         schema = writer.evaluate_schema(ds.schema)
         new_add_actions = list()
         for child_ds in ds.children:
             new_add_actions.extend(writer._add_actions_for_foreign_dataset(child_ds))
-        writer.write_deltalog_entry(schema, new_add_actions)
+        return writer.write_deltalog_entry(schema, new_add_actions)
 
     def evaluate_schema(self, pyarrow_schema: pa.Schema) -> delta_log.Schema:
         schema = delta_log.Schema.from_pyarrow_schema(pyarrow_schema)
@@ -146,7 +146,7 @@ class Writer:
                     raise ValueError("Schema mismatch")
             return schema
 
-    def write_deltalog_entry(self, schema: delta_log.Schema, add_actions: list[delta_log.Add]):
+    def write_deltalog_entry(self, schema: delta_log.Schema, add_actions: list[delta_log.Add]) -> int:
         new_entry = delta_log.DeltaLogEntry()
         if 0 == self.version_to_write:
             new_entry = delta_log.DeltaLogEntry.CreateTable(self.log_loc.path, schema, self.partition_by, add_actions)
@@ -159,6 +159,8 @@ class Writer:
 
         with self.log_loc.append_path(f"{self.version_to_write:020}.json").open(mode="w") as fh:
             new_entry.write(fh)
+
+        return self.version_to_write
 
     def write_data(self, ds: pa.dataset.Dataset, write_arrow_dataset_options: dict | None = None) -> list[delta_log.Add]:
         add_actions = list()
@@ -209,6 +211,7 @@ class DeltaTable:
         self,
         loc: str | storage.Location,
         log_loc: str | storage.Location | None = None,
+        version: int | None = None,
         storage_options: dict | None = None,
     ):
         self.loc = storage.Location.with_location(loc, storage_options=storage_options)
@@ -216,7 +219,7 @@ class DeltaTable:
             self.log_loc = self.loc.append_path("_delta_log")
         else:
             self.log_loc = storage.Location.with_location(log_loc, storage_options=storage_options)
-        self.dlog = read_delta_log(self.log_loc)
+        self.dlog = read_delta_log(self.log_loc, version=version)
         self.adds = self.dlog.add_actions()
         self.partition_columns = self.dlog.partition_columns()
         self.pyarrow_file_format = pyarrow.dataset.ParquetFileFormat(

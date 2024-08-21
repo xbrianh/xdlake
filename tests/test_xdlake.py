@@ -20,8 +20,8 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
     def test_append_and_overwrite(self):
         loc = f"{self.scratch_folder}/{uuid4()}"
 
-        for _ in range(3):
-            xdlake.Writer.write(loc, self.gen_table(), partition_by=["cats", "bats"])
+        versions = [xdlake.Writer.write(loc, self.gen_table(), partition_by=["cats", "bats"]) for _ in range(3)]
+        self.assertNotIn(None, versions)
 
         with self.subTest(mode="append"):
             df_expected = pa.concat_tables(self.tables)
@@ -30,9 +30,16 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
 
         with self.subTest(mode="overwrite"):
             t = self.gen_table()
-            xdlake.Writer.write(loc, t, partition_by=["cats", "bats"], mode="overwrite")
+            new_version = xdlake.Writer.write(loc, t, partition_by=["cats", "bats"], mode="overwrite")
+            versions.append(new_version)
+            self.assertNotIn(None, versions)
             df = xdlake.DeltaTable(loc).to_pyarrow_dataset().to_table()
             assert_arrow_table_equal(t, df)
+
+        with self.subTest("roll back to version"):
+            df = xdlake.DeltaTable(loc, version=versions[-2]).to_pyarrow_dataset().to_table()
+            assert_arrow_table_equal(df_expected, df)
+
 
     def test_partition_column_change(self):
         tests = [
