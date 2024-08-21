@@ -261,13 +261,8 @@ class DeltaTable:
     def resolve_adds(self) -> dict[str, list[delta_log.Add]]:
         filesystems = defaultdict(list)
         for path, add in self.adds.items():
-            is_absolute = "://" in path
-            if is_absolute:
-                loc = storage.Location.with_location(path)
-            else:
-                loc = self.loc.append_path(path)
-                add.path = loc.path
-            filesystems[storage.get_filesystem(loc.url)].append(add)
+            loc = storage.absloc(add.path, self.loc)
+            filesystems[storage.get_filesystem(loc.url)].append(add.replace(path=loc.path))
         return dict(filesystems)
 
     def to_pyarrow_dataset(self) -> pyarrow.dataset.Dataset:

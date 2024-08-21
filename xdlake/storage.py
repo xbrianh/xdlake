@@ -115,3 +115,21 @@ class Location:
 def get_pyarrow_py_filesystem(scheme: str, storage_options: dict | None = None) -> pyarrow.fs.PyFileSystem:
     fs = fsspec.filesystem(scheme, **(storage_options or dict()))
     return pyarrow.fs.PyFileSystem(pyarrow.fs.FSSpecHandler(fs))
+
+def absloc(path: str, root: Location) -> Location:
+    """Return path as an absolute Location.
+
+    If path is absolute, return Location with path. Otherwise, return Location with path appended onto root.
+
+    Args:
+        path (str): The path.
+        root(str, Location): Root location.
+
+    Returns:
+        Location
+    """
+    is_absolute = "://" in path
+    if is_absolute:
+        return Location.with_location(path)
+    else:
+        return root.append_path(path)
