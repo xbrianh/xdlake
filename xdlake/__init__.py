@@ -282,6 +282,10 @@ class DeltaTable:
             datasets.append(ds)
         return pa.dataset.dataset(datasets)
 
+    def to_pyarrow_table(self) -> pa.Table:
+        """Return arrow table."""
+        return self.to_pyarrow_dataset().to_table()
+
 def clone(
     src_loc: str | storage.Location,
     dst_loc: str | storage.Location,
