@@ -160,7 +160,7 @@ class Writer:
             existing_add_actions = self.dlog.add_actions().values()
             new_entry = delta_log.DeltaLogEntry.OverwriteTable(self.partition_by, existing_add_actions, add_actions)
 
-        with self.log_loc.append_path(f"{self.version_to_write:020}.json").open(mode="w") as fh:
+        with self.log_loc.append_path(utils.filename_for_version(self.version_to_write)).open(mode="w") as fh:
             new_entry.write(fh)
 
         return self.version_to_write
