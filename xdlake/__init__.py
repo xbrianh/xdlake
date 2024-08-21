@@ -18,9 +18,9 @@ def read_delta_log(
     storage_options: dict | None = None,
 ) -> delta_log.DeltaLog:
     loc = storage.Location.with_location(loc, storage_options=storage_options)
-    dlog = delta_log.DeltaLog()
     if not loc.exists():
-        return dlog
+        raise FileNotFoundError(loc.path)
+    dlog = delta_log.DeltaLog()
     for entry_loc in loc.list_files_sorted():
         entry_version = int(entry_loc.basename().split(".")[0])
         with entry_loc.open() as fh:
@@ -47,7 +47,10 @@ class Writer:
         self.mode = delta_log.WriteMode[mode] if isinstance(mode, str) else mode
         self.schema_mode = schema_mode
         self.partition_by = partition_by or list()
-        self.dlog = read_delta_log(self.log_loc)
+        try:
+            self.dlog = read_delta_log(self.log_loc)
+        except FileNotFoundError:
+            self.dlog = delta_log.DeltaLog()
         self._error_and_ignore = False
 
         if self.dlog.version is None:
