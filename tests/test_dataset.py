@@ -1,5 +1,6 @@
 import os
 import unittest
+import warnings
 from uuid import uuid4
 
 import pyarrow as pa
@@ -10,6 +11,10 @@ from tests.utils import TableGenMixin, assert_arrow_table_equal
 
 
 class TestDataset(TableGenMixin, unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        warnings.simplefilter("ignore", DeprecationWarning)
+
     def test_dataset(self):
         table = self.gen_table()
         record_batches = self.gen_table().to_batches()

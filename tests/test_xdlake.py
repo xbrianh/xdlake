@@ -1,5 +1,6 @@
 import os
 import unittest
+import warnings
 from contextlib import nullcontext
 from uuid import uuid4
 
@@ -12,6 +13,10 @@ from tests.utils import TableGenMixin, assert_arrow_table_equal
 
 
 class TestXdLake(TableGenMixin, unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        warnings.simplefilter("ignore", DeprecationWarning)
+
     def test_append_and_overwrite(self):
         loc = f"{self.scratch_folder}/{uuid4()}"
 

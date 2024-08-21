@@ -1,5 +1,6 @@
 import os
 import unittest
+import warnings
 from unittest import mock
 from uuid import uuid4
 from tempfile import TemporaryDirectory
@@ -11,6 +12,7 @@ class TestStorage(unittest.TestCase):
     def setUp(self):
         self.td = TemporaryDirectory()
         self.scratch_folder = os.path.abspath(self.td.name)
+        warnings.simplefilter("ignore", DeprecationWarning)
 
     def tearDown(self):
         self.td.cleanup()
