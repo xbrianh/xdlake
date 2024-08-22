@@ -18,7 +18,6 @@ class TestStorage(unittest.TestCase):
         self.td.cleanup()
 
     def test_resolution(self):
-        os.chdir(self.scratch_folder)
         name = f"{uuid4()}"
         tests = [
             ("local absolute", f"{self.scratch_folder}/tests", f"{self.scratch_folder}/tests/foo/{name}"),

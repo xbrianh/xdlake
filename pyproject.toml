@@ -30,6 +30,7 @@ include = ["xdlake"]
 dependencies = {file = ["requirements.txt"]}
 
 [tool.setuptools_scm]
+version_file = "xdlake/__version__.py"
 
 [tool.poetry]
 # Other configuration options...
