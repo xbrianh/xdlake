@@ -56,6 +56,7 @@ class TableGen:
             "cats": ["S", "A", "D"],
             "bats": [1, 2, 3],
         }
+        self.categorical_schema = pa.schema([("cats", pa.string()), ("bats", pa.int64())])
         self.order_parm = 0
 
     def __next__(self) -> pa.Table:
@@ -103,7 +104,6 @@ class TableGenMixin:
         self.td = TemporaryDirectory()
         self.scratch_folder = self.td.name
         self.table_gen = TableGen()
-        self.tables = list()
 
     def tearDown(self):
         self.td.cleanup()
@@ -114,7 +114,6 @@ class TableGenMixin:
             additional_cols = [additional_cols]
         with self.table_gen.with_extra_columns(additional_cols):
             t = next(self.table_gen)
-        self.tables.append(t)
         return t
 
     def gen_tables(self, num_tables: int, *, additional_cols: list | str | None = None):

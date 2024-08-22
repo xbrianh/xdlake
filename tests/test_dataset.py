@@ -14,6 +14,12 @@ class TestDataset(TableGenMixin, unittest.TestCase):
     def setUp(self):
         super().setUp()
         warnings.simplefilter("ignore", DeprecationWarning)
+        self.tables = list()
+
+    def gen_table(self, *args, **kwargs):
+        arrow_table = super().gen_table(*args, **kwargs)
+        self.tables.append(arrow_table)
+        return arrow_table
 
     def test_dataset(self):
         table = self.gen_table()
