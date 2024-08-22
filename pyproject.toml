@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=70.1", "wheel", "setuptools_scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xdlake"
+description = "A loose implimentation of the deltalake spec focused on extensibility and distributed data."
+authors = [
+    { name = "Brian Hannafious", email = "xbrianh@amorphous-industries.com" }
+]
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.10"
+keywords = ["deltalake", "parquet"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent"
+]
+dynamic = ["version", "dependencies"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["xdlake"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools_scm]
+
+[tool.poetry]
+# Other configuration options...
+readme = "README.md"
