@@ -5,7 +5,7 @@ test: lint mypy $(tests)
 
 # A pattern rule that runs a single test script
 $(tests): %.py :
-	XDLAKE_TEST_REPO=1 python -m unittest $*.py
+	python -m unittest $*.py
 
 lint:
 	ruff check $(MODULES) *.py
