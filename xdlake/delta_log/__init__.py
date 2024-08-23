@@ -311,7 +311,11 @@ class DeltaLogEntry:
         for a in self.actions:
             if isinstance(a, TableCommit):
                 if a.operation == TableCommitOperation.WRITE:
-                    return a.operationParameters["partitionBy"]
+                    partition_by = a.operationParameters.get("partitionBy")
+                    # deltalake writes a string sometimes?
+                    if isinstance(partition_by, str):
+                        partition_by = json.loads(partition_by)
+                    return partition_by
                 elif a.operation == TableCommitOperation.CREATE:
                     return a.metadata["partitionColumns"]
         return None
