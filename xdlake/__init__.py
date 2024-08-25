@@ -229,17 +229,14 @@ class DeltaTable:
             default_fragment_scan_options=pyarrow.dataset.ParquetFragmentScanOptions(pre_buffer=True)
         )
 
-    def version(self) -> int | None:
-        versions = self.versions()
-        if versions is not None:
-            return versions[-1]
-        return None
+    def version(self) -> int:
+        return self.versions()[-1]
 
-    def versions(self) -> list[int] | None:
+    def versions(self) -> list[int]:
         if self.dlog.entries:
             return list(self.dlog.entries.keys())
         else:
-            return None
+            raise ValueError("This table has no version. Is it too new?")
 
     def load_as_version(self, version: int) -> "DeltaTable":
         return type(self)(self.loc, self.log_loc, version=version)
