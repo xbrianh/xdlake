@@ -452,6 +452,28 @@ class DeltaLog:
                 return cols
         raise ValueError("No partitions found in log entries")
 
+    def validate_partition_by(self, new_partition_by) -> list:
+        existing_partition_columns = self.partition_columns()
+        if new_partition_by is None:
+            pass
+        elif set(existing_partition_columns) != set(new_partition_by):
+            raise ValueError(f"Expected partition columns {existing_partition_columns}, got {new_partition_by}")
+        return existing_partition_columns
+
+    def evaluate_schema(self, pyarrow_schema: pa.Schema, write_mode: WriteMode, schema_mode: str) -> Schema:
+        schema = Schema.from_pyarrow_schema(pyarrow_schema)
+        if not self.entries:
+            return schema
+        else:
+            existing_schema = self.schema()
+            if WriteMode.append == write_mode:
+                if "merge" == schema_mode:
+                    schema = existing_schema.merge(schema)
+                elif existing_schema != schema:
+                    raise ValueError("Schema mismatch")
+            return schema
+
+
 def generate_remove_acctions(add_actions: Iterable[Add]) -> list[Remove]:
     remove_actions = list()
     for add in add_actions:
