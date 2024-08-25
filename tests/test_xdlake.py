@@ -5,6 +5,7 @@ from contextlib import nullcontext
 from uuid import uuid4
 
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.dataset
 
 import xdlake
@@ -49,6 +50,7 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
             df = xdlake.DeltaTable(loc).load_as_version(versions[-2]).to_pyarrow_table()
             assert_arrow_table_equal(df_expected, df)
 
+        self._test_delete(loc)
 
     def test_partition_column_change(self):
         tests = [
@@ -111,6 +113,7 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
                     xdlake.DeltaTable(data_loc, log_loc).to_pyarrow_table(),
                 )
                 self._test_clone(data_loc, src_log_loc=log_loc)
+                self._test_delete(data_loc, log_loc=log_loc)
 
     def test_write_mode_error_ignore(self):
         loc = f"{self.scratch_folder}/{uuid4()}"
@@ -140,8 +143,8 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
             pa.concat_tables(arrow_tables),
             xdlake.DeltaTable(loc).to_pyarrow_table()
         )
-
         self._test_clone(loc)
+        self._test_delete(loc)
 
     def test_gs(self):
         partition_by = self.partition_by[:1]
@@ -155,8 +158,8 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
             pa.concat_tables(arrow_tables),
             xdlake.DeltaTable(loc).to_pyarrow_table()
         )
-
         self._test_clone(loc)
+        self._test_delete(loc)
 
     def test_write_kind(self):
         partition_by = self.partition_by[:1]
@@ -180,6 +183,8 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
             assert_arrow_table_equal(expected, xdlake.DeltaTable(loc).to_pyarrow_table())
             self._test_clone(loc)
 
+        self._test_delete(loc)
+
     def test_import_refs(self):
         loc = f"{self.scratch_folder}/{uuid4()}"
 
@@ -193,8 +198,8 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
             pa.concat_tables(arrow_tables),
             xdlake.DeltaTable(loc).to_pyarrow_table()
         )
-
         self._test_clone(loc)
+        self._test_delete(loc)
 
     def test_import_refs_with_partitions(self):
         hive_partition_schema = pa.unify_schemas([self.table_gen.categorical_schema, pa.schema([("bool_", pa.bool_())])])
@@ -228,8 +233,8 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
             pa.concat_tables(arrow_tables),
             xdlake.DeltaTable(loc).to_pyarrow_table()
         )
-
         self._test_clone(loc)
+        self._test_delete(loc)
 
     def test_clone(self):
         partition_by = self.partition_by[:1]
@@ -248,6 +253,8 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
             for at in more_arrow_tables:
                 xdlake.Writer.write(dst_loc, at, partition_by=partition_by)
             assert_arrow_table_equal(pa.concat_tables([*arrow_tables, *more_arrow_tables]), xdlake.DeltaTable(dst_loc).to_pyarrow_table())
+        self._test_delete(src_loc)
+        self._test_delete(dst_loc)
 
     def _test_clone(self, src_loc, src_log_loc: str | None = None) -> str:
         expected = xdlake.DeltaTable(src_loc, log_loc=src_log_loc).to_pyarrow_table()
@@ -268,6 +275,29 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
         self.assertTrue(tested_something)
 
         return dst_loc
+
+    def test_delete(self):
+        loc = f"{self.scratch_folder}/{uuid4()}"
+        arrow_tables = [self.gen_table() for _ in range(3)]
+        for at in arrow_tables:
+            xdlake.Writer.write(loc, at, partition_by=self.partition_by)
+        self._test_delete(loc)
+        self._test_clone(loc)
+
+    def _test_delete(self, loc: str, log_loc: str | None = None):
+        exp = (
+            (pc.field("cats") == pc.scalar("A"))
+            |
+            (pc.field("float64") > pc.scalar(0.9))
+        )
+        curr = xdlake.DeltaTable(loc, log_loc=log_loc).to_pyarrow_table()
+        expected = curr.filter(~exp)
+        xdlake.Writer.delete(loc, exp, log_loc=log_loc)
+        res = xdlake.DeltaTable(loc, log_loc=log_loc).to_pyarrow_table()
+        with self.subTest("Should have actually deleted something"):
+            self.assertLess(res.num_rows, curr.num_rows)
+        with self.subTest("Should aggree with expected"):
+            assert_arrow_table_equal(expected, res)
 
 
 if __name__ == '__main__':

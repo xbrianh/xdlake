@@ -4,7 +4,8 @@ from enum import Enum
 from uuid import uuid4
 from collections import defaultdict
 from dataclasses import dataclass, asdict, field, replace
-from typing import IO, Iterable
+from collections.abc import ValuesView
+from typing import IO, Iterable, Sequence
 
 import pyarrow as pa
 
@@ -162,13 +163,16 @@ class TableOperationParm:
 class TableCommitOperation:
     CREATE = "CREATE TABLE"
     WRITE = "WRITE"
+    DELETE = "DELETE"
 
 @dataclass
 class TableCommit(_DeltaLogAction):
     timestamp: int
     operationParameters: dict
+    operationMetrics: dict | None = field(default_factory=dict)
     operation: str = TableCommitOperation.CREATE
     clientVersion: str = CLIENT_VERSION
+    readVersion: int | None = None
 
     def to_action_dict(self) -> dict:
         info = {k: v for k, v in self.asdict().items()
@@ -199,6 +203,25 @@ class TableCommit(_DeltaLogAction):
             TableOperationParm.MODE: mode,
         }
         return cls(timestamp=timestamp, operationParameters=op_parms, operation=TableCommitOperation.WRITE)
+
+    @classmethod
+    def delete_with_parms(
+        cls,
+        timestamp: int,
+        predicate: str,
+        read_version: int,
+        operation_metrics: dict,
+    ):
+        op_parms = {
+            "predicate": predicate,
+        }
+        return cls(
+            timestamp=timestamp,
+            operationParameters=op_parms,
+            operationMetrics=operation_metrics,
+            operation=TableCommitOperation.DELETE,
+            readVersion=read_version,
+        )
 
 def _data_type_from_arrow(_t):
     if isinstance(_t, pa.lib.TimestampType):
@@ -289,7 +312,7 @@ class DeltaLogEntry:
 
         match action:
             case Type.commitInfo:
-                if TableCommitOperation.CREATE == info["operation"] or TableCommitOperation.WRITE == info["operation"]:
+                if info["operation"] in (TableCommitOperation.CREATE, TableCommitOperation.WRITE, TableCommitOperation.DELETE):
                     return TableCommit(**info)
             case Type.metaData:
                 return TableMetadata(**info)
@@ -357,6 +380,27 @@ class DeltaLogEntry:
     ) -> "DeltaLogEntry":
         commit = TableCommit.write_with_parms(utils.timestamp(), mode=WriteMode.overwrite.value, partition_by=partition_by)
         remove_actions = generate_remove_acctions(existing_add_actions)
+        return cls.with_actions([*remove_actions, *add_actions, commit])
+
+    @classmethod
+    def DeleteTable(
+        cls,
+        *,
+        predicate: str,
+        add_actions_to_remove: Sequence[Add] | ValuesView[Add],
+        add_actions: Sequence[Add] | ValuesView[Add],
+        read_version: int,
+        num_copied_rows: int,
+        num_deleted_rows: int,
+    ) -> "DeltaLogEntry":
+        operation_metrics = {
+            "num_added_files": len(add_actions),
+            "num_removed_files": len(add_actions_to_remove),
+            "num_copied_rows": num_copied_rows,
+            "num_deleted_rows": num_deleted_rows,
+        }
+        commit = TableCommit.delete_with_parms(utils.timestamp(), predicate, read_version, operation_metrics)
+        remove_actions = generate_remove_acctions(add_actions_to_remove)
         return cls.with_actions([*remove_actions, *add_actions, commit])
 
 class DeltaLog:

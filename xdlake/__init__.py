@@ -89,6 +89,57 @@ class Writer:
         new_add_actions = writer.write_data(ds, write_arrow_dataset_options)
         return writer.write_deltalog_entry(schema, new_add_actions)
 
+    @classmethod
+    def delete(
+        cls,
+        loc: str | storage.Location,
+        where: pc.Expression,
+        write_arrow_dataset_options: dict | None = None,
+        **kwargs,
+    ):
+        dt = DeltaTable(loc, log_loc=kwargs.get("log_loc"))
+        ds = dt.to_pyarrow_dataset()
+        if "partition_by" not in kwargs:
+            kwargs["partition_by"] = dt.partition_columns
+        writer = cls(loc, **kwargs)
+        batches_to_write = list()
+        existing_add_actions = {
+            storage.absloc(path, dt.loc).path: add
+            for path, add in writer.dlog.add_actions().items()
+        }
+        adds_to_remove = dict()
+        did_delete_rows: bool
+        num_copied_rows = 0
+        num_deleted_rows = 0
+        for tb in ds.scanner().scan_batches():
+            did_delete_rows = False
+            try:
+                rb_keep = tb.record_batch.filter(~where)
+                if tb.record_batch.num_rows > rb_keep.num_rows:  # something is deleted!
+                    did_delete_rows = True
+                    batches_to_write.append(rb_keep)
+                    num_copied_rows += rb_keep.num_rows
+                    num_deleted_rows += (tb.record_batch.num_rows - rb_keep.num_rows)
+            except IndexError:
+                # entire record batch was deleted - is this a pyarrow bug?
+                num_deleted_rows += tb.record_batch.num_rows
+                did_delete_rows = True
+            if did_delete_rows:
+                adds_to_remove[tb.fragment.path] = existing_add_actions[tb.fragment.path]
+
+        new_add_actions = writer.write_data(pyarrow.dataset.dataset(batches_to_write, schema=dt.dlog.schema().to_pyarrow_schema()), write_arrow_dataset_options)
+        new_entry = delta_log.DeltaLogEntry.DeleteTable(
+            predicate="pyarrow expression",
+            add_actions_to_remove=adds_to_remove.values(),
+            add_actions=new_add_actions,
+            read_version=dt.version(),
+            num_copied_rows=num_copied_rows,
+            num_deleted_rows=num_deleted_rows,
+        )
+        with writer.log_loc.append_path(utils.filename_for_version(writer.version_to_write)).open(mode="w") as fh:
+            new_entry.write(fh)
+        return writer.version_to_write
+
     def _add_actions_for_foreign_dataset(
         self,
         ds: pa.dataset.FileSystemDataset,
