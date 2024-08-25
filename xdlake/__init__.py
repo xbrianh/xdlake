@@ -229,6 +229,12 @@ class DeltaTable:
             default_fragment_scan_options=pyarrow.dataset.ParquetFragmentScanOptions(pre_buffer=True)
         )
 
+    def version(self) -> int | None:
+        versions = self.versions()
+        if versions is not None:
+            return versions[-1]
+        return None
+
     def versions(self) -> list[int] | None:
         if self.dlog.entries:
             return list(self.dlog.entries.keys())

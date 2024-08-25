@@ -46,10 +46,16 @@ class _DeltaLogAction:
     def replace(self, **kwargs):
         return replace(self, **kwargs)
 
+    def to_action_dict(self) -> dict:
+        raise NotADirectoryError()
+
 @dataclass
 class Protocol(_DeltaLogAction):
     minReaderVersion: int = 1
     minWriterVersion: int = 2
+
+    def to_action_dict(self) -> dict:
+        return {Type.protocol.name: self.asdict()}
 
 @dataclass
 class TableFormat(_DeltaLogAction):
@@ -139,6 +145,9 @@ class TableMetadata(_DeltaLogAction):
     partitionColumns: list[str] = field(default_factory=lambda: list())
     configuration: dict = field(default_factory=lambda: dict())
 
+    def to_action_dict(self) -> dict:
+        return {Type.metaData.name: self.asdict()}
+
     @property
     def schema(self) -> Schema:
         return Schema(**json.loads(self.schemaString))
@@ -160,6 +169,11 @@ class TableCommit(_DeltaLogAction):
     operationParameters: dict
     operation: str = TableCommitOperation.CREATE
     clientVersion: str = CLIENT_VERSION
+
+    def to_action_dict(self) -> dict:
+        info = {k: v for k, v in self.asdict().items()
+                if v}
+        return {Type.commitInfo.name: info}
 
     @property
     def metadata(self):
@@ -240,6 +254,9 @@ class Add(_DeltaLogAction):
     defaultRowCommitVersion: int | None = None
     clusteringProvider: str | None = None
 
+    def to_action_dict(self) -> dict:
+        return {Type.add.name: self.asdict()}
+
 @dataclass
 class Remove(_DeltaLogAction):
     path: str
@@ -248,6 +265,9 @@ class Remove(_DeltaLogAction):
     extendedFileMetadata: bool
     partitionValues: dict
     size: int
+
+    def to_action_dict(self) -> dict:
+        return {Type.remove.name: self.asdict()}
 
 class DeltaLogEntry:
     def __init__(self, actions: list | None = None):
@@ -283,21 +303,7 @@ class DeltaLogEntry:
                 raise Exception(f"Cannot handle delta log action '{action}'")
 
     def write(self, handle):
-        actions = list()
-        for a in self.actions:
-            info = a.asdict()
-            match a:
-                case TableCommit():
-                    actions.append({Type.commitInfo.name: info})
-                case TableMetadata():
-                    actions.append({Type.metaData.name: info})
-                case Protocol():
-                    actions.append({Type.protocol.name: info})
-                case Add():
-                    actions.append({Type.add.name: info})
-                case Remove():
-                    actions.append({Type.remove.name: info})
-        handle.write("\n".join([json.dumps(a) for a in actions]))
+        handle.write("\n".join([json.dumps(a.to_action_dict()) for a in self.actions]))
 
     def add_actions(self) -> list[Add]:
         return [a for a in self.actions
