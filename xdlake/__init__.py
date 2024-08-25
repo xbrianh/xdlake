@@ -53,7 +53,7 @@ class Writer:
             self.dlog = delta_log.DeltaLog()
         self._error_and_ignore = False
 
-        if self.dlog.version is None:
+        if not self.dlog.entries:
             self.version_to_write = 0
         else:
             self.version_to_write = 1 + self.dlog.version
@@ -132,7 +132,7 @@ class Writer:
             predicate="pyarrow expression",
             add_actions_to_remove=adds_to_remove.values(),
             add_actions=new_add_actions,
-            read_version=dt.version(),
+            read_version=dt.version,
             num_copied_rows=num_copied_rows,
             num_deleted_rows=num_deleted_rows,
         )
@@ -189,7 +189,7 @@ class Writer:
 
     def evaluate_schema(self, pyarrow_schema: pa.Schema) -> delta_log.Schema:
         schema = delta_log.Schema.from_pyarrow_schema(pyarrow_schema)
-        if self.dlog.version is None:
+        if not self.dlog.entries:
             return schema
         else:
             existing_schema = self.dlog.schema()
@@ -280,14 +280,13 @@ class DeltaTable:
             default_fragment_scan_options=pyarrow.dataset.ParquetFragmentScanOptions(pre_buffer=True)
         )
 
+    @property
     def version(self) -> int:
-        return self.versions()[-1]
+        return self.dlog.version
 
+    @property
     def versions(self) -> list[int]:
-        if self.dlog.entries:
-            return list(self.dlog.entries.keys())
-        else:
-            raise ValueError("This table has no version. Is it too new?")
+        return self.dlog.versions
 
     def load_as_version(self, version: int) -> "DeltaTable":
         return type(self)(self.loc, self.log_loc, version=version)

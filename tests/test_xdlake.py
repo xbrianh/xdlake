@@ -25,7 +25,7 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
 
         versions = [xdlake.Writer.write(loc, arrow_table, partition_by=self.partition_by) for arrow_table in arrow_tables]
         self.assertNotIn(None, versions)
-        self.assertEqual(versions, xdlake.DeltaTable(loc).versions())
+        self.assertEqual(versions, xdlake.DeltaTable(loc).versions)
 
         with self.subTest(mode="append"):
             df_expected = pa.concat_tables(arrow_tables)
@@ -265,7 +265,7 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
             assert_arrow_table_equal(xdlake.DeltaTable(dst_loc).to_pyarrow_table(), expected)
 
         tested_something = False
-        for version in xdlake.DeltaTable(src_loc, log_loc=src_log_loc).versions():
+        for version in xdlake.DeltaTable(src_loc, log_loc=src_log_loc).versions:
             tested_something = True
             with self.subTest("clone agrees", version=version):
                 assert_arrow_table_equal(

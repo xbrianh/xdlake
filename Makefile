@@ -8,7 +8,7 @@ $(tests): %.py :
 	python -m unittest $*.py
 
 lint:
-	ruff check $(MODULES) *.py
+	ruff check $(MODULES)
 
 mypy:
 	mypy --ignore-missing-imports $(MODULES)

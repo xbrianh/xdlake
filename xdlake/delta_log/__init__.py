@@ -417,11 +417,15 @@ class DeltaLog:
         return key in self.entries
 
     @property
-    def version(self) -> int | None:
-        try:
-            return max(self.entries.keys())
-        except ValueError:
-            return None
+    def version(self) -> int:
+        return self.versions[-1]
+
+    @property
+    def versions(self) -> list[int]:
+        if self.entries:
+            return sorted(self.entries.keys())
+        else:
+            raise ValueError("This delta log is empty!")
 
     def schema(self) -> Schema:
         for v in sorted(self.entries.keys(), reverse=True):
