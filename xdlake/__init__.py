@@ -244,7 +244,7 @@ class DeltaTable:
 
         def visitor(visited_file):
             stats = delta_log.Statistics.from_parquet_file_metadata(
-                pa.parquet.ParquetFile(visited_file.path).metadata
+                pa.parquet.ParquetFile(visited_file.path, filesystem=self.loc.fs).metadata
             )
 
             relpath = visited_file.path.replace(self.loc.path, "").strip("/")
