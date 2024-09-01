@@ -284,23 +284,15 @@ class DeltaTable:
         return add_actions
 
     def add_actions_for_foreign_dataset(self, ds: pa.dataset.FileSystemDataset) -> list[delta_log.Add]:
-        # TODO: is there a better way to find protocl? this looks potentially flaky
-        scheme_map = {
-            "py::fsspec+('s3', 's3a')": "s3://",
-            "py::fsspec+('gs', 'gcs')": "gs://",
-            "local": "file://",
-        }
-
         add_actions = list()
         for fragment in ds.get_fragments():
             md = pa.parquet.ParquetFile(fragment.path, filesystem=ds.filesystem).metadata
             stats = delta_log.Statistics.from_parquet_file_metadata(md)
-            url = f"{scheme_map[ds.filesystem.type_name]}{fragment.path}"
             info = ds.filesystem.get_file_info(fragment.path)
             partition_values = pyarrow.dataset.get_partition_keys(fragment.partition_expression)
             add_actions.append(
                 delta_log.Add(
-                    path=url,
+                    path=fragment.path,
                     modificationTime=utils.timestamp(),
                     size=info.size,
                     stats=stats.json(),
