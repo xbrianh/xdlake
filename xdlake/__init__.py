@@ -88,7 +88,8 @@ class DeltaTable:
         filesystems = defaultdict(list)
         for path, add in self.adds.items():
             loc = storage.absloc(add.path, self.loc)
-            filesystems[storage.get_filesystem(loc.url)].append(add.replace(path=loc.path))
+            fs = storage.get_filesystem(loc.url, storage_options=loc.storage_options)
+            filesystems[fs].append(add.replace(path=loc.path))
         return dict(filesystems)
 
     def to_pyarrow_dataset(self) -> pyarrow.dataset.Dataset:
