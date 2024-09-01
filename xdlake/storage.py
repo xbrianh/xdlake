@@ -37,6 +37,23 @@ def get_filesystem(url: str, storage_options: dict | None = None) -> fsspec.Abst
     else:
         return fsspec.filesystem(protocol, **(storage_options or dict()))
 
+def register_default_filesystem_for_protocol(protocol: str, **storage_options) -> fsspec.AbstractFileSystem:
+    """Create and register default filesystem for a protocol.
+
+    This is useful for filesystems requiring credentials that are not available in the environment.
+
+    Args:
+        protocol (str): The protocol for the filesystem, for instance "s3", "gs", or "az" for s3, google storage, and azure storage, respectively.
+        ** storage_options: keyword options passed to `fsspec.filesystem`
+
+    Returns:
+        fsspec.AbstractFileSystem
+    """
+    url = f"{protocol}://"
+    fs = get_filesystem(url, storage_options=storage_options)
+    register_filesystem(url, fs)
+    return fs
+
 
 class Location:
     def __init__(self, scheme: str, path: str, storage_options: dict | None = None):

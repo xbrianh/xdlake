@@ -68,6 +68,14 @@ class TestStorage(unittest.TestCase):
                 storage.get_filesystem(f"{protocol}://tmp")
                 mock_get_fs.assert_called_once_with(protocol)
 
+    @mock.patch("fsspec.filesystem")
+    def test_register_default_filesystem_for_protocol(self, mocks_fsspec_filesystem):
+        protocol = "doom"
+        storage_options = dict(foo="bar", biz="baz")
+        storage.register_default_filesystem_for_protocol(protocol, **storage_options)
+        mocks_fsspec_filesystem.assert_called_once_with(protocol, **storage_options)
+        self.assertIn(f"{protocol}://", storage._filesystems)
+
 
 if __name__ == '__main__':
     unittest.main()
