@@ -1,6 +1,8 @@
 import os
+import random
 import unittest
 import warnings
+from string import ascii_lowercase
 from unittest import mock
 from uuid import uuid4
 from tempfile import TemporaryDirectory
@@ -16,6 +18,7 @@ class TestStorage(unittest.TestCase):
 
     def tearDown(self):
         self.td.cleanup()
+        storage._filesystems = dict()
 
     def test_resolution(self):
         name = f"{uuid4()}"
@@ -44,7 +47,7 @@ class TestStorage(unittest.TestCase):
         loc = storage.Location.with_location(self.scratch_folder)
         self.assertEqual(sorted(names), [lloc.basename() for lloc in loc.list_files_sorted()])
 
-    def test_register_filesystem(self):
+    def test_get_filesystem(self):
         tests = [
             ("mock://foo", f"{uuid4()}", ["mock://foo", "mock://foo/blah"]),
             ("mock://foo/biz", f"{uuid4()}", ["mock://foo/biz", "mock://foo/biz/baz"]),
@@ -59,10 +62,11 @@ class TestStorage(unittest.TestCase):
                 with self.subTest("Should get correct fs for prefix", pfx=pfx, url=url):
                     self.assertEqual(storage.get_filesystem(url), mock_fs)
 
-        with self.subTest("Should request fsspec filesystem for protocol when no fs is registered"):
-            with mock.patch("fsspec.filesystem") as mock_get_fs:
-                storage.get_filesystem("xyzzyx://tmp")
-                mock_get_fs.assert_called_once_with("xyzzyx")
+        protocol = "".join(random.choice(ascii_lowercase) for _ in range(6))
+        with mock.patch("fsspec.filesystem") as mock_get_fs:
+            with self.subTest("Should request fsspec filesystem for protocol when no fs is registered"):
+                storage.get_filesystem(f"{protocol}://tmp")
+                mock_get_fs.assert_called_once_with(protocol)
 
 
 if __name__ == '__main__':
