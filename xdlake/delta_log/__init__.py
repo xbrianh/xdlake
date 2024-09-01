@@ -450,7 +450,7 @@ class DeltaLog:
             cols = self.entries[v].partition_columns()
             if cols is not None:
                 return cols
-        raise ValueError("No partitions found in log entries")
+        return list()
 
     def validate_partition_by(self, new_partition_by) -> list:
         existing_partition_columns = self.partition_columns()
