@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 import numpy as np
 import pyarrow as pa
 from pandas.testing import assert_frame_equal
+from azure.identity import DefaultAzureCredential
 
 import xdlake
 
@@ -148,3 +149,9 @@ class TableGenMixin:
             tables.append(t)
             paths.extend(files)
         return tables, paths
+
+
+class AzureSucksCredential(DefaultAzureCredential):
+    async def close(self, *args, **kwargs):
+        # thanks but I don't need piles of irrelevant exceptions
+        pass
