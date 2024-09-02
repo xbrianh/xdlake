@@ -193,7 +193,7 @@ class DeltaTable:
 
     def import_refs(
         self,
-        refs: str | Iterable[str] | storage.Location | pa.Table | pa.RecordBatch | pa.dataset.Dataset,
+        refs: str | Iterable[str] | storage.Location | pa.dataset.Dataset,
         mode: str | delta_log.WriteMode = delta_log.WriteMode.append.name,
         schema_mode: str = "overwrite",
         partition_by: list | None = None,
