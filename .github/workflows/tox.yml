@@ -36,7 +36,7 @@ jobs:
         make lint
     - name: Test with tox
       env:
-        AWS_DEFAULT_REGION: ${{ variables.AWS_DEFAULT_REGION }}
+        AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION }}
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       run: tox
