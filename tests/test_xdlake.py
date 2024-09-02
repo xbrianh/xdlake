@@ -158,7 +158,7 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
         for at in arrow_tables:
             xdl = xdl.write(at, partition_by=partition_by)
         assert_arrow_table_equal(pa.concat_tables(arrow_tables), xdl.to_pyarrow_table())
-        xdlake.storage.register_default_filesystem_for_protocol("az", **storage_options)
+        xdlake.storage.register_default_filesystem_for_protocol("az", storage_options=storage_options)
         self._test_clone(xdl)
         self._test_delete(xdl)
 
@@ -194,7 +194,7 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
             "account_name": "xdlake",
             "credential": AzureSucksCredential(),
         }
-        xdlake.storage.register_default_filesystem_for_protocol("az", **storage_options)
+        xdlake.storage.register_default_filesystem_for_protocol("az", storage_options=storage_options)
         arrow_tables, written_files = self.gen_parquets(locations=paths)
         xdl = xdlake.DeltaTable(f"{self.scratch_folder}/{uuid4()}").import_refs(written_files)
         assert_arrow_table_equal(pa.concat_tables(arrow_tables), xdl.to_pyarrow_table())
@@ -206,7 +206,7 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
             "account_name": "xdlake",
             "credential": AzureSucksCredential(),
         }
-        xdlake.storage.register_default_filesystem_for_protocol("az", **storage_options)
+        xdlake.storage.register_default_filesystem_for_protocol("az", storage_options=storage_options)
         hive_partition_schema = pa.unify_schemas([self.table_gen.categorical_schema, pa.schema([("bool_", pa.bool_())])])
         partitionings = {
             "hive": pyarrow.dataset.partitioning(flavor="hive", schema=hive_partition_schema),
