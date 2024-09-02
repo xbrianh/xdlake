@@ -1,5 +1,8 @@
 name: xdlake
 
+permissions:
+  id-token: write # Require write permission to Fetch an OIDC token.
+
 on:
   push:
     branches: [ "main" ]
