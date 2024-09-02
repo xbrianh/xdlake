@@ -11,4 +11,4 @@ on:
 
 jobs:
   test:
-    uses: ./.github/workflows/lib/test.yml
+    uses: ./.github/workflows/test.yml
