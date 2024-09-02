@@ -76,6 +76,14 @@ class TestStorage(unittest.TestCase):
         mocks_fsspec_filesystem.assert_called_once_with(protocol, **storage_options)
         self.assertIn(f"{protocol}://", storage._filesystems)
 
+    @mock.patch("fsspec.filesystem")
+    def test_storage_options(self, *mocks):
+        expected_storage_options = dict(boom="zoom", bob="frank")
+        loc = storage.Location.with_location("foo://bar/biz", storage_options=expected_storage_options)
+        self.assertEqual(loc.storage_options, expected_storage_options)
+        self.assertEqual(loc.append_path("alskdf").storage_options, expected_storage_options)
+        self.assertEqual(storage.absloc("ljlj", loc).storage_options, expected_storage_options)
+
 
 if __name__ == '__main__':
     unittest.main()

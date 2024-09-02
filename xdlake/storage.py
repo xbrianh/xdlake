@@ -90,7 +90,7 @@ class Location:
             p = os.path.join(self.path, *path_components)
         else:
             p = "/".join([self.path, *path_components])
-        return type(self)(self.scheme, p)
+        return type(self)(self.scheme, p, storage_options=self.storage_options)
 
     def dirname(self) -> str:
         if "file" == self.scheme:
@@ -147,6 +147,6 @@ def absloc(path: str, root: Location) -> Location:
     """
     is_absolute = "://" in path
     if is_absolute:
-        return Location.with_location(path)
+        return Location.with_location(path, storage_options=root.storage_options)
     else:
         return root.append_path(path)
