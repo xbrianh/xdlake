@@ -1,5 +1,6 @@
 from collections import defaultdict
 from collections.abc import Iterable
+from functools import lru_cache
 from typing import Union
 
 import pyarrow as pa
@@ -9,6 +10,10 @@ from xdlake import storage
 
 RESOLVABLE = Union[str | pa.Table | pa.RecordBatch | pa.dataset.Dataset]
 
+
+@lru_cache()
+def get_py_filesystem(fs: storage.fsspec.AbstractFileSystem) -> pa.fs.PyFileSystem:
+    return pa.fs.PyFileSystem(pa.fs.FSSpecHandler(fs))
 
 def intersect_schemas(schemas) -> pa.Schema:
     common_fields = set.intersection(*[{f for f in schema} for schema in schemas])

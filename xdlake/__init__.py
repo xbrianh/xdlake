@@ -64,7 +64,9 @@ class DeltaTable:
     def load_as_version(self, version: int) -> "DeltaTable":
         return type(self)(self.loc, self.log_loc, version=version)
 
-    def add_action_to_fragment(self, add: delta_log.Add, filesystem: pa.fs.PyFileSystem) -> pa.dataset.Fragment:
+    def add_action_to_fragment(self, add: delta_log.Add) -> tuple[storage.Location, pa.dataset.Fragment]:
+        loc = storage.absloc(add.path, self.loc)
+        pyfs = dataset_utils.get_py_filesystem(loc.fs)
         if self.partition_columns:
             partition_expressions = [
                 pc.equal(pc.field(name), pc.scalar(value))
@@ -77,34 +79,28 @@ class DeltaTable:
         # TODO add min/max and other info to partition expression to help pyarrow do filtering
 
         fragment = self.pyarrow_file_format.make_fragment(
-            add.path,
+            loc.path,
             partition_expression=partition_expression,
-            filesystem=filesystem,
+            filesystem=pyfs,
         )
 
-        return fragment
+        return loc, fragment
 
-    def resolve_adds(self) -> dict[str, list[delta_log.Add]]:
-        filesystems = defaultdict(list)
+    def get_fragments(self) -> dict[str, list[pyarrow.dataset.Fragment]]:
+        fragments = defaultdict(list)
         for path, add in self.adds.items():
-            loc = storage.absloc(add.path, self.loc)
-            fs = storage.get_filesystem(loc.url, storage_options=loc.storage_options)
-            filesystems[fs].append(add.replace(path=loc.path))
-        return dict(filesystems)
+            loc, fragment = self.add_action_to_fragment(add)
+            fragments[loc.fs].append(fragment)
+        return dict(fragments)
 
     def to_pyarrow_dataset(self) -> pyarrow.dataset.Dataset:
         datasets = list()
-        for fs, adds in self.resolve_adds().items():
-            pyfs = pyarrow.fs.PyFileSystem(pyarrow.fs.FSSpecHandler(fs))
-            fragments = [
-                self.add_action_to_fragment(add, pyfs)
-                for add in adds
-            ]
+        for fs, fragments in self.get_fragments().items():
             ds = pyarrow.dataset.FileSystemDataset(
                 fragments,
                 self.dlog.schema().to_pyarrow_schema(),
                 self.pyarrow_file_format,
-                pyfs,
+                dataset_utils.get_py_filesystem(fs),
             )
             datasets.append(ds)
         return pa.dataset.dataset(datasets)

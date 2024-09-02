@@ -147,6 +147,6 @@ def absloc(path: str, root: Location) -> Location:
     """
     is_absolute = "://" in path
     if is_absolute:
-        return Location.with_location(path, storage_options=root.storage_options)
+        return Location.with_location(path)
     else:
         return root.append_path(path)
