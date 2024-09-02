@@ -21,7 +21,6 @@ class WriteMode(Enum):
     error = "Error"
     ignore = "Ignore"
 
-
 class Type(Enum):
     commitInfo = "commitInfo"
     metaData = "metaData"
@@ -52,6 +51,7 @@ class _DeltaLogAction:
 
 @dataclass
 class Protocol(_DeltaLogAction):
+    """Represetns the protocol version of the delta log"""
     minReaderVersion: int = 1
     minWriterVersion: int = 2
 
@@ -60,6 +60,7 @@ class Protocol(_DeltaLogAction):
 
 @dataclass
 class TableFormat(_DeltaLogAction):
+    """Represents the file format of the table"""
     provider: str = "parquet"
     options: dict = field(default_factory=lambda: dict())
 
@@ -114,17 +115,38 @@ class Schema(_DeltaLogAction):
 
     @classmethod
     def from_pyarrow_schema(cls, schema: pa.Schema) -> "Schema":
+        """Create a Schema object from a pyarrow.Schema object
+
+        Args:
+            schema (pa.Schema): A pyarrow schema object
+
+        Returns:
+            Schema: A new schema object
+        """
         fields = [
             SchemaField(f.name, _data_type_from_arrow(f.type), f.nullable, f.metadata or {}).asdict()
             for f in schema
         ]
         return cls(fields=fields)
 
-    def to_pyarrow_schema(self):
+    def to_pyarrow_schema(self) -> pa.Schema:
+        """Convert the Schema object to a pyarrow.Schema object.
+
+        Returns:
+            pa.Schema
+        """
         pairs = [(f["name"], DELTA_TO_ARROW_TYPE[f["type"]]) for f in self.fields]
         return pa.schema(pairs)
 
     def merge(self, other) -> "Schema":
+        """Merge two schemas
+
+        Args:
+            other (Schema): Another schema object
+
+        Returns:
+            Schema: A new schema object
+        """
         a = self.to_pyarrow_schema()
         b = other.to_pyarrow_schema()
         merged_schema = pa.unify_schemas([a, b])
@@ -293,16 +315,40 @@ class Remove(_DeltaLogAction):
         return {Type.remove.name: self.asdict()}
 
 class DeltaLogEntry:
+    """A single entry in the delta table transaction log.
+
+    Args:
+        actions (list, optional): The actions in this entry.
+    """
     def __init__(self, actions: list | None = None):
         self.actions = actions or list()
 
     @classmethod
     def with_handle(cls, handle: IO):
+        """Create a DeltaLogEntry from a file handle.
+
+        Args:
+            handle (IO): A file handle
+
+        Returns:
+            DeltaLogEntry: A new DeltaLogEntry object
+        """
         actions = [cls.load_action(line) for line in handle]
         return cls(actions)
 
     @staticmethod
-    def load_action(obj: str | bytes | dict): 
+    def load_action(obj: str | bytes | dict) -> _DeltaLogAction: 
+        """Load an action from a string, bytes, or dict.
+
+        Args:
+            obj (str | bytes | dict): The JSON data to load.
+
+        Returns:
+            A new action object
+
+        Raises:
+            ValueError: If the action cannot be loaded.
+        """
         if isinstance(obj, (str, bytes)):
             info = json.loads(obj)
         else:
@@ -314,6 +360,8 @@ class DeltaLogEntry:
             case Type.commitInfo:
                 if info["operation"] in (TableCommitOperation.CREATE, TableCommitOperation.WRITE, TableCommitOperation.DELETE):
                     return TableCommit(**info)
+                else:
+                    raise ValueError(f"Unknown operation '{info['operation']}'")
             case Type.metaData:
                 return TableMetadata(**info)
             case Type.protocol:
@@ -323,20 +371,28 @@ class DeltaLogEntry:
             case Type.remove:
                 return Remove(**info)
             case _:
-                raise Exception(f"Cannot handle delta log action '{action}'")
+                raise ValueError(f"Cannot handle delta log action '{action}'")
 
     def write(self, handle):
+        """Write the entry to a file handle.
+
+        Args:
+            handle (IO): A file handle
+        """
         handle.write("\n".join([json.dumps(a.to_action_dict()) for a in self.actions]))
 
     def add_actions(self) -> list[Add]:
+        """Get all add actions in the entry."""
         return [a for a in self.actions
                 if isinstance(a, Add)]
 
     def remove_actions(self) -> list[Remove]:
+        """Get all remove actions in the entry."""
         return [a for a in self.actions
                 if isinstance(a, Remove)]
 
     def partition_columns(self) -> list[str] | None:
+        """Get the partition columns in the entry."""
         for a in self.actions:
             if isinstance(a, TableCommit):
                 if a.operation == TableCommitOperation.WRITE:
@@ -351,12 +407,31 @@ class DeltaLogEntry:
 
     @classmethod
     def with_actions(cls, actions: list[_DeltaLogAction]) -> "DeltaLogEntry":
+        """Create a new DeltaLogEntry with a list of actions.
+
+        Args:
+            actions (list): A list of actions
+
+        Returns:
+            DeltaLogEntry: A new DeltaLogEntry object
+        """
         entry = cls()
         entry.actions.extend(actions)
         return entry
 
     @classmethod
     def CreateTable(cls, path: str, schema: Schema, partition_by: list, add_actions: list[Add]) -> "DeltaLogEntry":
+        """Create a new DeltaLogEntry for creating a table.
+
+        Args:
+            path (str): The path to
+            schema (Schema): The schema of the table
+            partition_by (list): The partition columns
+            add_actions (list[Add]): The add actions
+
+        Returns:
+            DeltaLogEntry: A new DeltaLogEntry object
+        """
         protocol = Protocol()
         table_metadata = TableMetadata(schemaString=schema.json(), partitionColumns=partition_by)
         commit = TableCommit.create_with_parms(path, utils.timestamp(), table_metadata, protocol)
@@ -364,6 +439,16 @@ class DeltaLogEntry:
 
     @classmethod
     def AppendTable(cls, partition_by: list, add_actions: list[Add], schema: Schema | None = None) -> "DeltaLogEntry":
+        """Create a new DeltaLogEntry for appending to a table.
+
+        Args:
+            partition_by (list): The partition columns
+            add_actions (list[Add]): The add actions
+            schema (Schema, optional): The schema of the table.
+
+        Returns:
+            DeltaLogEntry: A new DeltaLogEntry object
+        """
         commit = TableCommit.write_with_parms(utils.timestamp(), mode=WriteMode.append.value, partition_by=partition_by)
         actions = add_actions + [commit]
         if schema is not None:
@@ -378,6 +463,16 @@ class DeltaLogEntry:
         existing_add_actions: Iterable[Add],
         add_actions: list[Add]
     ) -> "DeltaLogEntry":
+        """Create a new DeltaLogEntry for overwriting a table.
+
+        Args:
+            partition_by (list): The partition columns
+            existing_add_actions (Iterable[Add]): The existing add actions
+            add_actions (list[Add]): The new add actions
+
+        Returns:
+            DeltaLogEntry: A new DeltaLogEntry object
+        """
         commit = TableCommit.write_with_parms(utils.timestamp(), mode=WriteMode.overwrite.value, partition_by=partition_by)
         remove_actions = generate_remove_acctions(existing_add_actions)
         return cls.with_actions([*remove_actions, *add_actions, commit])
@@ -393,6 +488,19 @@ class DeltaLogEntry:
         num_copied_rows: int,
         num_deleted_rows: int,
     ) -> "DeltaLogEntry":
+        """Create a new DeltaLogEntry for deleting a table.
+
+        Args:
+            predicate (str): The predicate used to delete rows.
+            add_actions_to_remove (Sequence[Add]): The add actions to remove.
+            add_actions (Sequence[Add]): The new add actions.
+            read_version (int): The input version for the delete operation.
+            num_copied_rows (int): The number of rows copied from the input version.
+            num_deleted_rows (int): The number of rows deleted from the input version.
+
+        Returns:
+            DeltaLogEntry: A new DeltaLogEntry object
+        """
         operation_metrics = {
             "num_added_files": len(add_actions),
             "num_removed_files": len(add_actions_to_remove),
@@ -404,6 +512,8 @@ class DeltaLogEntry:
         return cls.with_actions([*remove_actions, *add_actions, commit])
 
 class DeltaLog:
+    """The transaction log of a delta table."""
+
     def __init__(self):
         self.entries = dict()
 
@@ -418,16 +528,19 @@ class DeltaLog:
 
     @property
     def version(self) -> int:
+        """The largest version in the log."""
         return self.versions[-1]
 
     @property
     def versions(self) -> list[int]:
+        """All versions in the log."""
         if self.entries:
             return sorted(self.entries.keys())
         else:
             raise ValueError("This delta log is empty!")
 
     def schema(self) -> Schema:
+        """The latest schema in the log."""
         for v in sorted(self.entries.keys(), reverse=True):
             for a in self.entries[v].actions:
                 if isinstance(a, TableMetadata):
@@ -435,6 +548,7 @@ class DeltaLog:
         raise RuntimeError("No schema found in log entries")
 
     def add_actions(self) -> dict[str, Add]:
+        """Add actions as of the latest version."""
         adds = dict()
         for v in sorted(self.entries.keys()):
             entry = self.entries[v]
@@ -445,6 +559,7 @@ class DeltaLog:
         return adds
 
     def partition_columns(self) -> list:
+        """The partition columns of the latest version."""
         cols = list()
         for v in sorted(self.entries.keys(), reverse=True):
             cols = self.entries[v].partition_columns()
@@ -452,7 +567,15 @@ class DeltaLog:
                 return cols
         return list()
 
-    def validate_partition_by(self, new_partition_by) -> list:
+    def validate_partition_by(self, new_partition_by: Iterable[str] | None) -> list:
+        """Check if the new partition columns are the same as the existing ones.
+
+        Args:
+            new_partition_by (Iterable[str], optional): The new partition columns
+
+        Returns:
+            list: The existing partition
+        """
         existing_partition_columns = self.partition_columns()
         if new_partition_by is None:
             pass
@@ -461,6 +584,16 @@ class DeltaLog:
         return existing_partition_columns
 
     def evaluate_schema(self, pyarrow_schema: pa.Schema, write_mode: WriteMode, schema_mode: str) -> Schema:
+        """Evaluate a new table schema given write_mode and schema_mode.
+
+        Args:
+            pyarrow_schema (pa.Schema): The schema to evaluate
+            write_mode (WriteMode): The write mode
+            schema_mode (str): The schema mode
+
+        Returns:
+            Schema: The evaluated schema
+        """
         schema = Schema.from_pyarrow_schema(pyarrow_schema)
         if not self.entries:
             return schema
@@ -475,6 +608,14 @@ class DeltaLog:
 
 
 def generate_remove_acctions(add_actions: Iterable[Add]) -> list[Remove]:
+    """Generate remove actions from add actions.
+
+    Args:
+        add_actions (Iterable[Add]): A list of Add actions
+
+    Returns:
+        list[Remove]: A list of Remove actions
+    """
     remove_actions = list()
     for add in add_actions:
         remove =  Remove(path=add.path,

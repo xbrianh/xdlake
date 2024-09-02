@@ -17,6 +17,16 @@ def read_delta_log(
     version: int | None = None,
     storage_options: dict | None = None,
 ) -> delta_log.DeltaLog:
+    """Read a delta table transaction log.
+
+    Args:
+        loc (str | Location): Root of the transaction log directory.
+        version (int, otional): Read log entries up to this version.
+        storage_options (dict, optional): keyword arguments to pass to fsspec.filesystem
+
+    Returns:
+        delta_log.DeltaLog
+    """
     loc = storage.Location.with_location(loc, storage_options=storage_options)
     dlog = delta_log.DeltaLog()
     if loc.exists():
@@ -30,6 +40,21 @@ def read_delta_log(
 
 
 class DeltaTable:
+    """A DeltaTable is a high-level API for working with Delta Lake tables.
+
+    This class defines the read and write operations that can be performed on a delta table. If you don't like how it
+    works you can subclass it: it's meant to be customizable and extensible. If you _still_ hate it, submit a
+    pull request.
+
+    Args:
+        loc (str | Location): Root of the table directory.
+        log_loc (str | Location, optional): Root of the transaction log directory. This is for remotely stored logs.
+        version (int, optional): Read table at this version.
+        storage_options (dict, optional): keyword arguments to pass to fsspec.filesystem
+
+    Returns:
+        DeltaTable: A new DeltaTable instance.
+    """
     def __init__(
         self,
         loc: str | storage.Location,
@@ -55,16 +80,34 @@ class DeltaTable:
 
     @property
     def version(self) -> int:
+        """Return the version of the table."""
         return self.dlog.version
 
     @property
     def versions(self) -> list[int]:
+        """Return the versions of the table."""
         return self.dlog.versions
 
     def load_as_version(self, version: int) -> "DeltaTable":
+        """Load the table at a specific version.
+
+        Args:
+            version (int): Version to load.
+
+        Returns:
+            DeltaTable: A new DeltaTable instance.
+        """
         return type(self)(self.loc, self.log_loc, version=version)
 
     def add_action_to_fragment(self, add: delta_log.Add) -> tuple[storage.Location, pa.dataset.Fragment]:
+        """Convert a delta log add action to a pyarrow dataset fragment.
+
+        Args:
+            add (delta_log.Add): Add action.
+
+        Returns:
+            tuple[storage.Location, pa.dataset.Fragment]
+        """
         loc = storage.absloc(add.path, self.loc)
         pyfs = dataset_utils.get_py_filesystem(loc.fs)
         if self.partition_columns:
@@ -87,6 +130,7 @@ class DeltaTable:
         return loc, fragment
 
     def get_fragments(self) -> dict[str, list[pyarrow.dataset.Fragment]]:
+        """Return a dictionary of fragments by filesystem."""
         fragments = defaultdict(list)
         for path, add in self.adds.items():
             loc, fragment = self.add_action_to_fragment(add)
@@ -94,6 +138,7 @@ class DeltaTable:
         return dict(fragments)
 
     def to_pyarrow_dataset(self) -> pyarrow.dataset.Dataset:
+        """Return arrow dataset."""
         datasets = list()
         for fs, fragments in self.get_fragments().items():
             ds = pyarrow.dataset.FileSystemDataset(
@@ -118,6 +163,19 @@ class DeltaTable:
         write_arrow_dataset_options: dict | None = None,
         storage_options: dict | None = None,
     ) -> "DeltaTable":
+        """Write data to the table.
+
+        Args:
+            data (Table | Dataset | RecordBatch): Data to write.
+            mode (str | WriteMode, optional): Write mode. Must be one of "append", "overwrite", "error", or "ignore".
+            schema_mode (str, optional): Schema mode.
+            partition_by (list[str], optional): Partition columns.
+            write_arrow_dataset_options (dict, optional): Options to pass to pyarrow.dataset.write_dataset.
+            storage_options (dict, optional): Options to pass to fsspec.filesystem.
+
+        Returns:
+            DeltaTable: A new DeltaTable instance.
+        """
         mode = delta_log.WriteMode[mode] if isinstance(mode, str) else mode
         if self._version_to_write:
             match mode:
@@ -140,6 +198,19 @@ class DeltaTable:
         schema_mode: str = "overwrite",
         partition_by: list | None = None,
     ) -> "DeltaTable":
+        """Import data from a foreign dataset.
+
+        Args:
+            refs (str | Iterable[str] | Location | Table | RecordBatch | Dataset): Foreign dataset.
+            mode (str | WriteMode, optional): Write mode. Must be one of "append", "overwrite", "error", or "ignore".
+            schema_mode (str, optional): Schema mode.
+            partition_by (list[str], optional): Partition columns.
+
+
+
+        Returns:
+            DeltaTable: A new DeltaTable instance.
+        """
         mode = delta_log.WriteMode[mode] if isinstance(mode, str) else mode
         if self._version_to_write:
             match mode:
@@ -157,7 +228,7 @@ class DeltaTable:
         self.write_deltalog_entry(mode, schema, new_add_actions, partition_by)
         return type(self)(self.loc, self.log_loc)
 
-    def clone(self, dst_loc: str | storage.Location, dst_log_loc: str | None = None):
+    def clone(self, dst_loc: str | storage.Location, dst_log_loc: str | None = None) -> "DeltaTable":
         """Clone the DeltaTable
 
         The cloned table contains add actions that reference files in the source table without copying data. Version history is preserved.
@@ -165,6 +236,9 @@ class DeltaTable:
         Args:
             dst_loc (str | Location): Location of the destination table.
             dst_log_loc (str | None): Location of the destination table's delta log if stored remotely.
+
+        Returns:
+            DeltaTable: A new DeltaTable instance.
         """
         dst_loc = storage.Location.with_location(dst_loc)
         dst_dlog_loc = storage.Location.with_location(dst_log_loc or dst_loc.append_path("_delta_log"))
@@ -182,11 +256,16 @@ class DeltaTable:
                 delta_log.DeltaLogEntry(dst_actions).write(fh)
         return type(self)(dst_loc, dst_log_loc)
 
-    def delete(
-        self,
-        where: pc.Expression,
-        write_arrow_dataset_options: dict | None = None,
-    ):
+    def delete(self, where: pc.Expression, write_arrow_dataset_options: dict | None = None) -> "DeltaTable":
+        """Delete rows from the table.
+
+        Args:
+            where (Expression): PyArrow expression.
+            write_arrow_dataset_options (dict, optional): Options to pass to pyarrow.dataset.write_dataset.
+
+        Returns:
+            DeltaTable: A new DeltaTable instance.
+        """
         ds = self.to_pyarrow_dataset()
         batches_to_write = list()
         existing_add_actions = {
@@ -236,6 +315,20 @@ class DeltaTable:
         partition_by: list | None = None,
         write_arrow_dataset_options: dict | None = None,
     ) -> list[delta_log.Add]:
+        """Write data and generate add actions for written files.
+
+        This is used during table writes. If you want to change write behavior before the log is updated, this is where
+        you do it.
+
+        Args:
+            ds (Dataset): Arrow dataset.
+            partition_by (list[str], optional): Partition columns.
+            write_arrow_dataset_options (dict, optional): Options to pass to pyarrow.dataset.write_dataset.
+
+        Returns:
+            list[delta_log.Add]
+        """
+
         add_actions = list()
 
         def visitor(visited_file):
@@ -280,6 +373,14 @@ class DeltaTable:
         return add_actions
 
     def add_actions_for_foreign_dataset(self, ds: pa.dataset.FileSystemDataset) -> list[delta_log.Add]:
+        """Generate add actions for a foreign dataset.
+
+        Args:
+            ds (FileSystemDataset): Foreign dataset.
+
+        Returns:
+            list[delta_log.Add]
+        """
         add_actions = list()
         for fragment in ds.get_fragments():
             md = pa.parquet.ParquetFile(fragment.path, filesystem=ds.filesystem).metadata
@@ -305,6 +406,14 @@ class DeltaTable:
         add_actions: list[delta_log.Add],
         partition_by: list | None = None,
     ):
+        """Write a new delta log entry.
+
+        Args:
+            mode (WriteMode): Write mode.
+            schema (delta_log.Schema): Schema.
+            add_actions (list[delta_log.Add]): Add actions.
+            partition_by (list[str], optional): Partition
+        """
         partition_by = partition_by or list()
         new_entry = delta_log.DeltaLogEntry()
         if 0 == self._version_to_write:
