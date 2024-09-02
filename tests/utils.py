@@ -2,6 +2,7 @@ import os
 import pytz
 import random
 import datetime
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from tempfile import TemporaryDirectory
 
@@ -144,10 +145,11 @@ class TableGenMixin:
 
     def gen_parquets(self, *, locations, **kwargs) -> tuple[list[pa.Table], list[str]]:
         tables, paths = list(), list()
-        for loc in locations:
-            t, files = self._gen_parquets(loc, **kwargs)
-            tables.append(t)
-            paths.extend(files)
+        with ThreadPoolExecutor() as e:
+            for f in [e.submit(self._gen_parquets, loc, **kwargs) for loc in locations]:
+                t, files = f.result()
+                tables.append(t)
+                paths.extend(files)
         return tables, paths
 
 

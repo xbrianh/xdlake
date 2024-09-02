@@ -2,6 +2,7 @@ import os
 import unittest
 import warnings
 from contextlib import nullcontext
+from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
 import pyarrow as pa
@@ -258,20 +259,18 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
         self._test_delete(cloned)
 
     def _test_clone(self, xdl: xdlake.DeltaTable) -> xdlake.DeltaTable:
+        self.assertLess(0, len(xdl.versions))
         cloned = xdl.clone(f"{self.scratch_folder}/{uuid4()}")
 
-        with self.subTest("clone to local"):
-            assert_arrow_table_equal(cloned.to_pyarrow_table(), xdl.to_pyarrow_table())
+        def assert_version_equal(v: int):
+            assert_arrow_table_equal(
+                xdl.load_as_version(v).to_pyarrow_table(),
+                cloned.load_as_version(v).to_pyarrow_table(),
+            )
 
-        tested_something = False
-        for version in xdl.versions:
-            tested_something = True
-            with self.subTest("clone agrees", version=version):
-                assert_arrow_table_equal(
-                    xdl.load_as_version(version).to_pyarrow_table(),
-                    cloned.load_as_version(version).to_pyarrow_table(),
-                )
-        self.assertTrue(tested_something)
+        with ThreadPoolExecutor() as e:
+            for _ in e.map(assert_version_equal, xdl.versions):
+                pass
 
         return cloned
 
@@ -291,7 +290,7 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
         )
         deleted = xdl.delete(exp)
         with self.subTest("Should have actually deleted something"):
-            self.assertLess(deleted.to_pyarrow_table().num_rows, xdl.to_pyarrow_table().num_rows)
+            self.assertLess(deleted.to_pyarrow_dataset().count_rows(), xdl.to_pyarrow_dataset().count_rows())
         with self.subTest("Should aggree with expected"):
             assert_arrow_table_equal(xdl.to_pyarrow_table().filter(~exp), deleted.to_pyarrow_table())
 
