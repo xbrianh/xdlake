@@ -420,7 +420,7 @@ class DeltaLogEntry:
         return entry
 
     @classmethod
-    def CreateTable(cls, path: str, schema: Schema, partition_by: list, add_actions: list[Add]) -> "DeltaLogEntry":
+    def commit_create_table(cls, path: str, schema: Schema, partition_by: list, add_actions: list[Add]) -> "DeltaLogEntry":
         """Create a new DeltaLogEntry for creating a table.
 
         Args:
@@ -438,7 +438,7 @@ class DeltaLogEntry:
         return cls.with_actions([protocol, table_metadata, *add_actions, commit])
 
     @classmethod
-    def AppendTable(cls, partition_by: list, add_actions: list[Add], schema: Schema | None = None) -> "DeltaLogEntry":
+    def commit_append_table(cls, partition_by: list, add_actions: list[Add], schema: Schema | None = None) -> "DeltaLogEntry":
         """Create a new DeltaLogEntry for appending to a table.
 
         Args:
@@ -457,7 +457,7 @@ class DeltaLogEntry:
         return cls.with_actions(actions)
 
     @classmethod
-    def OverwriteTable(
+    def commit_overwrite_table(
         cls,
         partition_by: list,
         existing_add_actions: Iterable[Add],
@@ -478,7 +478,7 @@ class DeltaLogEntry:
         return cls.with_actions([*remove_actions, *add_actions, commit])
 
     @classmethod
-    def DeleteTable(
+    def commit_delete_table(
         cls,
         *,
         predicate: str,
@@ -488,7 +488,7 @@ class DeltaLogEntry:
         num_copied_rows: int,
         num_deleted_rows: int,
     ) -> "DeltaLogEntry":
-        """Create a new DeltaLogEntry for deleting a table.
+        """Create a new DeltaLogEntry for deleting rows from a table.
 
         Args:
             predicate (str): The predicate used to delete rows.

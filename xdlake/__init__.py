@@ -297,7 +297,7 @@ class DeltaTable:
             self.partition_columns,
             write_arrow_dataset_options,
         )
-        new_entry = delta_log.DeltaLogEntry.DeleteTable(
+        new_entry = delta_log.DeltaLogEntry.commit_delete_table(
             predicate="pyarrow expression",
             add_actions_to_remove=adds_to_remove.values(),
             add_actions=new_add_actions,
@@ -417,13 +417,13 @@ class DeltaTable:
         partition_by = partition_by or list()
         new_entry = delta_log.DeltaLogEntry()
         if 0 == self._version_to_write:
-            new_entry = delta_log.DeltaLogEntry.CreateTable(self.log_loc.path, schema, partition_by, add_actions)
+            new_entry = delta_log.DeltaLogEntry.commit_create_table(self.log_loc.path, schema, partition_by, add_actions)
             self.log_loc.mkdir()
         elif delta_log.WriteMode.append == mode:
-            new_entry = delta_log.DeltaLogEntry.AppendTable(partition_by, add_actions, schema)
+            new_entry = delta_log.DeltaLogEntry.commit_append_table(partition_by, add_actions, schema)
         elif delta_log.WriteMode.overwrite == mode:
             existing_add_actions = self.dlog.add_actions().values()
-            new_entry = delta_log.DeltaLogEntry.OverwriteTable(partition_by, existing_add_actions, add_actions)
+            new_entry = delta_log.DeltaLogEntry.commit_overwrite_table(partition_by, existing_add_actions, add_actions)
 
         with self.log_loc.append_path(utils.filename_for_version(self._version_to_write)).open(mode="w") as fh:
             new_entry.write(fh)
