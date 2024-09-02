@@ -1,4 +1,4 @@
-# xdlake: Fast reads with integrity for data URLs
+# xdlake
 A loose implimentation of the deltalake spec focused on extensibility and distributed data.
 
 ## Links
