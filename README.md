@@ -129,4 +129,4 @@ Please report bugs, issues, feature requests, etc. on [GitHub](https://github.co
 [launch gitpod workspace](https://gitpod.io/#https://github.com/xbrianh/xdlake)
 
 ## Build Status
-![main](https://github.com/xbrianh/xdlake/actions/workflows/tox.yml/badge.svg)
+![main](https://github.com/xbrianh/xdlake/actions/workflows/cicd.yml/badge.svg)
