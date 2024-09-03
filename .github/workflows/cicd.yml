@@ -48,6 +48,7 @@ jobs:
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       run: tox
   build:
+    runs-on: ubuntu-latest
     name: Build dist packages
     needs: test
     steps:
