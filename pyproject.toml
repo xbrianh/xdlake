@@ -22,6 +22,13 @@ classifiers = [
 ]
 dynamic = ["version", "dependencies"]
 
+[project.urls]
+Homepage = "https://github.com/xbrianh/xdlake"
+Repository = "https://github.com/xbrianh/xdlake.git"
+Issues = "https://github.com/xbrianh/xdlake/issues"
+# Documentation = "https://readthedocs.org"
+# Changelog = "https://github.com/me/spam/blob/master/CHANGELOG.md"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["xdlake"]
