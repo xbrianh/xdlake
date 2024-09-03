@@ -1,3 +1,4 @@
+build
 pandas
 deltalake
 ruff-lsp
