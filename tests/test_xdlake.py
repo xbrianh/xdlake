@@ -294,6 +294,19 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
         with self.subTest("Should aggree with expected"):
             assert_arrow_table_equal(xdl.to_pyarrow_table().filter(~exp), deleted.to_pyarrow_table())
 
+    def test_from_pandas(self):
+        """A common usage pattern is to derive arrow tables from pandas frames. This surprisingly caused a failure due
+        to unhashable metadata in the schema!
+        """
+        frames = [self.gen_table().to_pandas() for _ in range(3)]
+        arrow_tables = [pa.Table.from_pandas(df) for df in frames]
+        xdl = xdlake.DeltaTable(f"s3://test-xdlake/tests/{uuid4()}")
+        for at in arrow_tables:
+            xdl = xdl.write(at)
+        assert_arrow_table_equal(pa.concat_tables(arrow_tables), xdl.to_pyarrow_table())
+        self._test_delete(xdl)
+        self._test_clone(xdl)
+
 
 if __name__ == '__main__':
     unittest.main()
