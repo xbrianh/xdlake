@@ -3,6 +3,15 @@ A loose implementation of the deltalake [protocol](https://github.com/delta-io/d
 in Python on top of [pyarrow](https://arrow.apache.org/docs/python/index.html), focused on extensibility,
 customizability, and distributed data. 
 
+This is mostly inspired by [delta-rs](https://github.com/delta-io/delta-rs), and is (much) less battle tested.
+However, it is more flexible given it's Pythonic design, and offers additional support for distributed data and soft
+clones.
+
+## Install
+```
+pip install xdlake
+```
+
 ## Usage
 
 #### Instantiation
