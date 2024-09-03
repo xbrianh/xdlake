@@ -55,7 +55,7 @@ def fragments_to_dataset(fragments: list[pa.Table | pa.RecordBatch], schema_mode
     """
     schemas = defaultdict(list)
     for frag in fragments:
-        schemas[frag.schema].append(frag)
+        schemas[frag.schema.remove_metadata()].append(frag)
 
     datasets = [pa.dataset.dataset(frags) for frags in schemas.values()]
 
