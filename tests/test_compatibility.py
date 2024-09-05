@@ -75,6 +75,26 @@ class TestCompatibility(TableGenMixin, unittest.TestCase):
         with self.subTest("should aggree"):
             assert_arrow_table_equal(deltalake.DeltaTable(xdl.loc.path), xdlake.DeltaTable(dt_loc).to_pyarrow_table())
 
+    def test_optimize(self):
+        xdl = xdlake.DeltaTable(f"{self.scratch_folder}/{uuid4()}")
+        dt_loc = f"{self.scratch_folder}/{uuid4()}"
+        arrow_tables = [self.gen_table() for _ in range(23)]
+
+        for at in arrow_tables:
+            xdl = xdl.write(at, partition_by=self.partition_by)
+            deltalake.write_deltalake(dt_loc, at, partition_by=self.partition_by, mode="append")
+
+        num_start_rows = xdl.to_pyarrow_table().to_pandas().shape[0]
+        xdl = xdl.delete((((pc.field("float64") > pc.scalar(0.9)) | (pc.field("cats") == pc.scalar("A")))))
+        deltalake.DeltaTable(dt_loc).delete("float64 > 0.9 or cats == 'A'")
+        deltalake.DeltaTable(dt_loc).optimize()
+
+        with self.subTest("should have actually deleted rows"):
+            self.assertLess(xdl.to_pyarrow_table().to_pandas().shape[0], num_start_rows)
+
+        with self.subTest("should aggree"):
+            assert_arrow_table_equal(deltalake.DeltaTable(xdl.loc.path), xdlake.DeltaTable(dt_loc).to_pyarrow_table())
+
 
 if __name__ == '__main__':
     unittest.main()
