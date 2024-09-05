@@ -3,7 +3,7 @@ import datetime
 from enum import Enum
 from uuid import uuid4
 from collections import defaultdict
-from dataclasses import dataclass, asdict, field, replace
+from dataclasses import dataclass, asdict, field, fields, replace
 from collections.abc import ValuesView
 from typing import IO, Iterable, Sequence
 
@@ -48,6 +48,12 @@ class _DeltaLogAction:
 
     def to_action_dict(self) -> dict:
         raise NotADirectoryError()
+
+    @classmethod
+    def with_info(cls, info: dict):
+        supported_info = {f.name: info.get(f.name) for f in fields(cls)}  # type: ignore[arg-type]  # it's OK to call fields on _DeltaLogAction subclasses
+        return cls(**supported_info)
+
 
 @dataclass
 class Protocol(_DeltaLogAction):
@@ -186,6 +192,7 @@ class TableCommitOperation:
     CREATE = "CREATE TABLE"
     WRITE = "WRITE"
     DELETE = "DELETE"
+    values = [CREATE, WRITE, DELETE]
 
 @dataclass
 class TableCommit(_DeltaLogAction):
@@ -358,18 +365,18 @@ class DeltaLogEntry:
 
         match action:
             case Type.commitInfo:
-                if info["operation"] in (TableCommitOperation.CREATE, TableCommitOperation.WRITE, TableCommitOperation.DELETE):
-                    return TableCommit(**info)
+                if info["operation"] in TableCommitOperation.values:
+                    return TableCommit.with_info(info)
                 else:
                     raise ValueError(f"Unknown operation '{info['operation']}'")
             case Type.metaData:
-                return TableMetadata(**info)
+                return TableMetadata.with_info(info)
             case Type.protocol:
-                return Protocol(**info)
+                return Protocol.with_info(info)
             case Type.add:
-                return Add(**info)
+                return Add.with_info(info)
             case Type.remove:
-                return Remove(**info)
+                return Remove.with_info(info)
             case _:
                 raise ValueError(f"Cannot handle delta log action '{action}'")
 
