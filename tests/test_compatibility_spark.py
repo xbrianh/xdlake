@@ -1,3 +1,4 @@
+import os
 import unittest
 from functools import lru_cache
 from uuid import uuid4
@@ -21,6 +22,7 @@ def create_spark_session():
     return spark
 
 
+@unittest.skipIf(not os.environ.get("XDLAKE_TEST_SPARK_COMPATIBILITY"), "Skipping spark compatibility tests")
 class TestCompatibilitySpark(TableGenMixin, unittest.TestCase):
     def setUp(self):
         super().setUp()
