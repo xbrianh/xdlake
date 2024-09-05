@@ -34,7 +34,7 @@ learn how to [filter pyarrow datasets](https://arrow.apache.org/docs/python/gene
 ```
 ds = dt.to_pyarrow_dataset()
 t = dt.to_pyarrow_table()
-df = dt.to_pyarrow_table().to_pandas()
+df = dt.to_pandas()
 ```
 
 #### Writes
