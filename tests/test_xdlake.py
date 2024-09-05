@@ -8,10 +8,11 @@ from uuid import uuid4
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.dataset
+import pandas as pd
 
 import xdlake
 
-from tests.utils import TableGenMixin, assert_arrow_table_equal, AzureSucksCredential
+from tests.utils import TableGenMixin, assert_pandas_dataframe_equal, assert_arrow_table_equal, AzureSucksCredential
 
 
 class TestXdLake(TableGenMixin, unittest.TestCase):
@@ -23,6 +24,16 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
     def tearDown(self):
         super().tearDown()
         xdlake.storage._filesystems = dict()
+
+    def test_to_pandas(self):
+        arrow_tables = [self.gen_table() for _ in range(3)]
+        xdl = xdlake.DeltaTable(f"{self.scratch_folder}/{uuid4()}")
+        for at in arrow_tables:
+            xdl = xdl.write(at, partition_by=self.partition_by)
+        assert_pandas_dataframe_equal(
+            pd.concat([at.to_pandas() for at in arrow_tables]),
+            xdl.to_pandas(),
+        )
 
     def test_append_and_overwrite(self):
         arrow_tables = [self.gen_table() for _ in range(3)]

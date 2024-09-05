@@ -160,6 +160,10 @@ class DeltaTable:
         """Return arrow table."""
         return self.to_pyarrow_dataset().to_table()
 
+    def to_pandas(self):
+        """Return pandas DataFrame."""
+        return self.to_pyarrow_table().to_pandas()
+
     def write(
         self,
         data: pa.Table | pa.dataset.Dataset | pa.RecordBatch,
