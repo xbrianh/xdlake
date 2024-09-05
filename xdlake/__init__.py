@@ -1,3 +1,4 @@
+import re
 import functools
 import operator
 from uuid import uuid4
@@ -10,6 +11,9 @@ import pyarrow.dataset
 import pyarrow.parquet
 
 from xdlake import delta_log, dataset_utils, storage, utils
+
+
+_log_entry_filename_re = re.compile("^\d+\.json$")
 
 
 def read_delta_log(
@@ -31,11 +35,13 @@ def read_delta_log(
     dlog = delta_log.DeltaLog()
     if loc.exists():
         for entry_loc in loc.list_files_sorted():
-            entry_version = int(entry_loc.basename().split(".")[0])
-            with entry_loc.open() as fh:
-                dlog[entry_version] = delta_log.DeltaLogEntry.with_handle(fh)
-            if version in dlog:
-                break
+            filename = entry_loc.basename()
+            if _log_entry_filename_re.match(filename):
+                entry_version = int(filename.split(".", 1)[0])
+                with entry_loc.open() as fh:
+                    dlog[entry_version] = delta_log.DeltaLogEntry.with_handle(fh)
+                if version in dlog:
+                    break
     return dlog
 
 
