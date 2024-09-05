@@ -1,44 +1,69 @@
 import unittest
+from functools import lru_cache
 from uuid import uuid4
 
-import deltalake
 import pyarrow.compute as pc
 import pyspark.sql
 import delta  # delta-spark
 
 import xdlake
 
-from tests.utils import TableGenMixin, assert_arrow_table_equal
+from tests.utils import TableGenMixin, assert_pandas_dataframe_equal
 
 
+@lru_cache
 def create_spark_session():
-    builder = pyspark.sql.SparkSession.builder.appName("xdlake_tests") \
+    builder = pyspark.sql.SparkSession.builder.appName("MyApp") \
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
+        .config("spark.databricks.delta.retentionDurationCheck.enabled", "false")
     spark = delta.configure_spark_with_delta_pip(builder).getOrCreate()
     return spark
 
 
-spark = create_spark_session()
-
-
-class TestCompatibility(TableGenMixin, unittest.TestCase):
+class TestCompatibilitySpark(TableGenMixin, unittest.TestCase):
     def setUp(self):
         super().setUp()
         self.partition_by = list(self.table_gen.categoricals.keys())
+        self.spark = create_spark_session()
 
-    def test_doom(self):
-        xdl = xdlake.DeltaTable(f"{self.scratch_folder}/{uuid4()}")
+    def test_read(self):
         sdt_loc = f"{self.scratch_folder}/{uuid4()}"
         arrow_tables = [self.gen_table() for _ in range(3)]
         for at in arrow_tables:
-            spark_df = spark.createDataFrame(at.to_pandas())
+            # TODO: test timestamp as well -- spark is doing something wonky with dates?
+            at = at.drop_columns(["timestamp"])
+            spark_df = self.spark.createDataFrame(at.to_pandas())
             spark_df.write.format("delta").mode("append").save(sdt_loc, overwrite=True)
-        sdt = delta.tables.DeltaTable.forPath(spark, sdt_loc)
-        df = sdt.toDF().toPandas()
-        print(df)
-        df = xdlake.DeltaTable(sdt_loc).to_pyarrow_table().to_pandas()
-        print(df)
+        spark_dt = delta.tables.DeltaTable.forPath(self.spark, sdt_loc)
+        spark_dt.delete("float64 > 0.9")
+        spark_dt.vacuum(0)
+        spark_dt = delta.tables.DeltaTable.forPath(self.spark, sdt_loc)
+        assert_pandas_dataframe_equal(
+            spark_dt.toDF().toPandas(),
+            xdlake.DeltaTable(sdt_loc).to_pyarrow_table().to_pandas(),
+        )
+
+    def test_cross_read(self):
+        known_incompatibilities = ["int8", "int16", "int32"]
+        xdl_loc = f"{self.scratch_folder}/{uuid4()}"
+        xdl = xdlake.DeltaTable(xdl_loc)
+        sdt_loc = f"{self.scratch_folder}/{uuid4()}"
+        arrow_tables = [self.gen_table() for _ in range(3)]
+        for at in arrow_tables:
+            # TODO: test timestamp as well -- spark is doing something wonky with dates?
+            at = at.drop_columns(["timestamp"] + known_incompatibilities)
+            xdl = xdl.write(at, partition_by=self.partition_by)
+            spark_df = self.spark.createDataFrame(at.to_pandas())
+            spark_df.write.format("delta").mode("append").save(sdt_loc, overwrite=True)
+        spark_dt = delta.tables.DeltaTable.forPath(self.spark, sdt_loc)
+        spark_dt.delete("float64 > 0.9")
+        xdl = xdl.delete(pc.field("float64") > pc.scalar(0.9))
+        spark_dt.vacuum(0)
+        assert_pandas_dataframe_equal(
+            delta.tables.DeltaTable.forPath(self.spark, xdl_loc).toDF().toPandas(),
+            xdlake.DeltaTable(sdt_loc).to_pyarrow_table().to_pandas(),
+        )
 
 
 if __name__ == '__main__':
