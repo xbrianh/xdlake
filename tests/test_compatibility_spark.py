@@ -4,22 +4,10 @@ from functools import lru_cache
 from uuid import uuid4
 
 import pyarrow.compute as pc
-import pyspark.sql
-import delta  # delta-spark
 
 import xdlake
 
 from tests.utils import TableGenMixin, assert_pandas_dataframe_equal
-
-
-@lru_cache
-def create_spark_session():
-    builder = pyspark.sql.SparkSession.builder.appName("MyApp") \
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
-        .config("spark.databricks.delta.retentionDurationCheck.enabled", "false")
-    spark = delta.configure_spark_with_delta_pip(builder).getOrCreate()
-    return spark
 
 
 @unittest.skipIf(not os.environ.get("XDLAKE_TEST_SPARK_COMPATIBILITY"), "Skipping spark compatibility tests")
@@ -27,9 +15,23 @@ class TestCompatibilitySpark(TableGenMixin, unittest.TestCase):
     def setUp(self):
         super().setUp()
         self.partition_by = list(self.table_gen.categoricals.keys())
-        self.spark = create_spark_session()
+        self.spark = self.create_spark_session()
+
+    @lru_cache
+    def create_spark_session(self):
+        import pyspark.sql
+        import delta  # delta-spark
+
+        builder = pyspark.sql.SparkSession.builder.appName("MyApp") \
+            .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
+            .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
+            .config("spark.databricks.delta.retentionDurationCheck.enabled", "false")
+        spark = delta.configure_spark_with_delta_pip(builder).getOrCreate()
+        return spark
 
     def test_read(self):
+        import delta  # delta-spark
+
         sdt_loc = f"{self.scratch_folder}/{uuid4()}"
         arrow_tables = [self.gen_table() for _ in range(3)]
         for at in arrow_tables:
@@ -47,6 +49,8 @@ class TestCompatibilitySpark(TableGenMixin, unittest.TestCase):
         )
 
     def test_cross_read(self):
+        import delta  # delta-spark
+
         known_incompatibilities = ["int8", "int16", "int32"]
         xdl_loc = f"{self.scratch_folder}/{uuid4()}"
         xdl = xdlake.DeltaTable(xdl_loc)
