@@ -52,10 +52,11 @@ class TestDeltaLog(unittest.TestCase):
 
     def test_partition_columns(self):
         for expected_partition_columns in (list(), [f"{uuid4()}" for _ in range(3)]):
-            tc = delta_log.DeltaLogEntry.commit_overwrite_table(expected_partition_columns, [], [])
-            dlog = xdlake.read_delta_log(LOGDIR)
-            dlog.entries[len(dlog.entries)] = tc
-            self.assertEqual(expected_partition_columns, dlog.partition_columns())
+            with self.subTest(expected=expected_partition_columns):
+                tc = delta_log.DeltaLogEntry.commit_overwrite_table(expected_partition_columns, [], [])
+                dlog = xdlake.read_delta_log(LOGDIR)
+                dlog.entries[len(dlog.entries)] = tc
+                self.assertEqual(expected_partition_columns, dlog.partition_columns())
 
 
 if __name__ == "__main__":
