@@ -7,3 +7,4 @@ gcsfs
 s3fs
 adlfs
 tox
+pyspark
