@@ -192,7 +192,9 @@ class TableCommitOperation:
     CREATE = "CREATE TABLE"
     WRITE = "WRITE"
     DELETE = "DELETE"
-    values = [CREATE, WRITE, DELETE]
+    VACUUM_START = "VACUUM START"
+    VACUUM_END = "VACUUM END"
+    values = [CREATE, WRITE, DELETE, VACUUM_START, VACUUM_END]
 
 @dataclass
 class TableCommit(_DeltaLogAction):
@@ -202,6 +204,12 @@ class TableCommit(_DeltaLogAction):
     operation: str = TableCommitOperation.CREATE
     clientVersion: str = CLIENT_VERSION
     readVersion: int | None = None
+
+    # spark attributes
+    isolationLevel: str | None = None
+    isBlindAppend: bool | None = None
+    engineInfo: str | None = None
+    txnId: str | None = None
 
     def to_action_dict(self) -> dict:
         info = {k: v for k, v in self.asdict().items()

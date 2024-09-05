@@ -95,10 +95,15 @@ class TableGen:
         finally:
             self.columns = old_cols
 
-def assert_arrow_table_equal(a, b):
-    a = a.to_pandas().sort_values("order").sort_index(axis=1).reset_index(drop=True)
-    b = b.to_pandas().sort_values("order").sort_index(axis=1).reset_index(drop=True)
+
+def assert_pandas_dataframe_equal(a, b):
+    a = a.sort_values("order").sort_index(axis=1).reset_index(drop=True)
+    b = b.sort_values("order").sort_index(axis=1).reset_index(drop=True)
     assert_frame_equal(a, b)
+
+
+def assert_arrow_table_equal(a, b):
+    assert_pandas_dataframe_equal(a.to_pandas(), b.to_pandas())
 
 
 class TableGenMixin:
