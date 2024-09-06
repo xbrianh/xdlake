@@ -1,7 +1,8 @@
 # xdlake
-A loose implementation of the deltalake [protocol](https://github.com/delta-io/delta/blob/master/PROTOCOL.md), written
-in Python on top of [pyarrow](https://arrow.apache.org/docs/python/index.html), focused on extensibility,
-customizability, and distributed data. 
+
+A loose implementation of [deltalake](https://delta.io), and the deltalake, written in Python on top of
+[pyarrow](https://arrow.apache.org/docs/python/index.html), focused on extensibility, customizability, and distributed
+data.
 
 This is mostly inspired by the [deltalake package](https://github.com/delta-io/delta-rs), and is (much) less battle tested.
 However, it is more flexible given it's Pythonic design. If you're interested give it a shot and maybe even help make it
@@ -130,6 +131,7 @@ xdlake.storage.register_filesystem("az://container-blah/whiz/whaz", az_creds)
 
 ## Links
 Project home page [GitHub](https://github.com/xbrianh/xdlake)  
+The deltalake transaction log [protocol](https://github.com/delta-io/delta/blob/master/PROTOCOL.md)
 
 ### Bugs
 Please report bugs, issues, feature requests, etc. on [GitHub](https://github.com/xbrianh/xdlake).
