@@ -7,3 +7,6 @@ gcsfs
 s3fs
 adlfs
 tox
+pyspark
+delta-spark
+setuptools

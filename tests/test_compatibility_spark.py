@@ -1,4 +1,3 @@
-import os
 import unittest
 from functools import lru_cache
 from uuid import uuid4
@@ -10,7 +9,6 @@ import xdlake
 from tests.utils import TableGenMixin, assert_pandas_dataframe_equal
 
 
-@unittest.skipIf(not os.environ.get("XDLAKE_TEST_SPARK_COMPATIBILITY"), "Skipping spark compatibility tests")
 class TestCompatibilitySpark(TableGenMixin, unittest.TestCase):
     def setUp(self):
         super().setUp()
@@ -42,6 +40,7 @@ class TestCompatibilitySpark(TableGenMixin, unittest.TestCase):
         spark_dt = delta.tables.DeltaTable.forPath(self.spark, sdt_loc)
         spark_dt.delete("float64 > 0.9")
         spark_dt.vacuum(0)
+        spark_dt.optimize().executeCompaction()
         spark_dt = delta.tables.DeltaTable.forPath(self.spark, sdt_loc)
         assert_pandas_dataframe_equal(
             spark_dt.toDF().toPandas(),
@@ -66,6 +65,7 @@ class TestCompatibilitySpark(TableGenMixin, unittest.TestCase):
         spark_dt.delete("float64 > 0.9")
         xdl = xdl.delete(pc.field("float64") > pc.scalar(0.9))
         spark_dt.vacuum(0)
+        spark_dt.optimize().executeCompaction()
         assert_pandas_dataframe_equal(
             delta.tables.DeltaTable.forPath(self.spark, xdl_loc).toDF().toPandas(),
             xdlake.DeltaTable(sdt_loc).to_pyarrow_table().to_pandas(),
