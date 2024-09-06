@@ -9,3 +9,4 @@ adlfs
 tox
 pyspark
 delta-spark
+setuptools
