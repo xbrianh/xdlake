@@ -1,30 +1,19 @@
 import os
 import unittest
-import warnings
 from contextlib import nullcontext
-from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
 import pyarrow as pa
-import pyarrow.compute as pc
 import pyarrow.dataset
 import pandas as pd
 
 import xdlake
 
-from tests.utils import TableGenMixin, assert_pandas_dataframe_equal, assert_arrow_table_equal, AzureSucksCredential
+from tests.base_xdlake_test import BaseXdlakeTest
+from tests.utils import assert_pandas_dataframe_equal, assert_arrow_table_equal
 
 
-class TestXdLake(TableGenMixin, unittest.TestCase):
-    def setUp(self):
-        super().setUp()
-        warnings.simplefilter("ignore", DeprecationWarning)
-        self.partition_by = list(self.table_gen.categoricals.keys())
-
-    def tearDown(self):
-        super().tearDown()
-        xdlake.storage._filesystems = dict()
-
+class TestXdLake(BaseXdlakeTest):
     def test_to_pandas(self):
         arrow_tables = [self.gen_table() for _ in range(3)]
         xdl = xdlake.DeltaTable(f"{self.scratch_folder}/{uuid4()}")
@@ -112,8 +101,6 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
         expected = pa.concat_tables(arrow_tables)
         tests = [
             (f"{self.scratch_folder}/{uuid4()}", f"{self.scratch_folder}/{uuid4()}"),
-            (f"s3://test-xdlake/tests/{uuid4()}", f"{self.scratch_folder}/{uuid4()}"),
-            (f"{self.scratch_folder}/{uuid4()}", f"s3://test-xdlake/tests/{uuid4()}"),
         ]
         for data_loc, log_loc in tests:
             xdl = xdlake.DeltaTable(data_loc, log_loc)
@@ -136,42 +123,6 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
         with self.subTest("should not write to table, and not raise"):
             xdl = xdl.write(self.gen_table(), mode="ignore")
             assert_arrow_table_equal(expected, xdl.to_pyarrow_table())
-
-    def test_s3(self):
-        partition_by = self.partition_by[:1]
-        arrow_tables = [self.gen_table() for _ in range(3)]
-        xdl = xdlake.DeltaTable(f"s3://test-xdlake/tests/{uuid4()}")
-        for at in arrow_tables:
-            xdl = xdl.write(at, partition_by=partition_by)
-        assert_arrow_table_equal(pa.concat_tables(arrow_tables), xdl.to_pyarrow_table())
-        self._test_clone(xdl)
-        self._test_delete(xdl)
-
-    def test_gs(self):
-        partition_by = self.partition_by[:1]
-        arrow_tables = [self.gen_table() for _ in range(3)]
-        xdl = xdlake.DeltaTable(f"gs://test-xdlake/tests/{uuid4()}")
-        for at in arrow_tables:
-            xdl = xdl.write(at, partition_by=partition_by)
-        assert_arrow_table_equal(pa.concat_tables(arrow_tables), xdl.to_pyarrow_table())
-        self._test_clone(xdl)
-        self._test_delete(xdl)
-
-    def test_azure_storage(self):
-        partition_by = self.partition_by[:1]
-        arrow_tables = [self.gen_table() for _ in range(3)]
-
-        storage_options = {
-            "account_name": "xdlake",
-            "credential": AzureSucksCredential(),
-        }
-        xdl = xdlake.DeltaTable(f"az://test-xdlake/tests/{uuid4()}", storage_options=storage_options)
-        for at in arrow_tables:
-            xdl = xdl.write(at, partition_by=partition_by)
-        assert_arrow_table_equal(pa.concat_tables(arrow_tables), xdl.to_pyarrow_table())
-        xdlake.storage.register_default_filesystem_for_protocol("az", storage_options=storage_options)
-        self._test_clone(xdl)
-        self._test_delete(xdl)
 
     def test_write_kind(self):
         partition_by = self.partition_by[:1]
@@ -198,14 +149,6 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
 
     def test_import_refs(self):
         paths = [os.path.join(f"{self.scratch_folder}", f"{uuid4()}", f"{uuid4()}.parquet") for _ in range(2)]
-        paths += [f"s3://test-xdlake/{uuid4()}.parquet" for _ in range(2)]
-        paths += [f"gs://test-xdlake/{uuid4()}.parquet" for _ in range(2)]
-        paths += [f"az://test-xdlake/{uuid4()}.parquet" for _ in range(2)]
-        storage_options = {
-            "account_name": "xdlake",
-            "credential": AzureSucksCredential(),
-        }
-        xdlake.storage.register_default_filesystem_for_protocol("az", storage_options=storage_options)
         arrow_tables, written_files = self.gen_parquets(locations=paths)
         xdl = xdlake.DeltaTable(f"{self.scratch_folder}/{uuid4()}").import_refs(written_files)
         assert_arrow_table_equal(pa.concat_tables(arrow_tables), xdl.to_pyarrow_table())
@@ -213,11 +156,6 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
         self._test_delete(xdl)
 
     def test_import_refs_with_partitions(self):
-        storage_options = {
-            "account_name": "xdlake",
-            "credential": AzureSucksCredential(),
-        }
-        xdlake.storage.register_default_filesystem_for_protocol("az", storage_options=storage_options)
         hive_partition_schema = pa.unify_schemas([self.table_gen.categorical_schema, pa.schema([("bool_", pa.bool_())])])
         partitionings = {
             "hive": pyarrow.dataset.partitioning(flavor="hive", schema=hive_partition_schema),
@@ -228,7 +166,7 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
         datasets = list()
         arrow_tables = list()
         for flavor, partitioning in partitionings.items():
-            foreign_refs_loc = f"az://test-xdlake/{uuid4()}"  # os.path.join(f"{self.scratch_folder}", f"{uuid4()}")
+            foreign_refs_loc = os.path.join(f"{self.scratch_folder}", f"{uuid4()}")
             new_tables, written_files = self.gen_parquets(
                 locations=[foreign_refs_loc],
                 partitioning=partitioning,
@@ -269,22 +207,6 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
         self._test_delete(xdl)
         self._test_delete(cloned)
 
-    def _test_clone(self, xdl: xdlake.DeltaTable) -> xdlake.DeltaTable:
-        self.assertLess(0, len(xdl.versions))
-        cloned = xdl.clone(f"{self.scratch_folder}/{uuid4()}")
-
-        def assert_version_equal(v: int):
-            assert_arrow_table_equal(
-                xdl.load_as_version(v).to_pyarrow_table(),
-                cloned.load_as_version(v).to_pyarrow_table(),
-            )
-
-        with ThreadPoolExecutor() as e:
-            for _ in e.map(assert_version_equal, xdl.versions):
-                pass
-
-        return cloned
-
     def test_delete(self):
         xdl = xdlake.DeltaTable(f"{self.scratch_folder}/{uuid4()}")
         arrow_tables = [self.gen_table() for _ in range(3)]
@@ -293,25 +215,13 @@ class TestXdLake(TableGenMixin, unittest.TestCase):
         self._test_delete(xdl)
         self._test_clone(xdl)
 
-    def _test_delete(self, xdl: xdlake.DeltaTable):
-        exp = (
-            (pc.field("cats") == pc.scalar("A"))
-            |
-            (pc.field("float64") > pc.scalar(0.9))
-        )
-        deleted = xdl.delete(exp)
-        with self.subTest("Should have actually deleted something"):
-            self.assertLess(deleted.to_pyarrow_dataset().count_rows(), xdl.to_pyarrow_dataset().count_rows())
-        with self.subTest("Should aggree with expected"):
-            assert_arrow_table_equal(xdl.to_pyarrow_table().filter(~exp), deleted.to_pyarrow_table())
-
     def test_from_pandas(self):
         """A common usage pattern is to derive arrow tables from pandas frames. This surprisingly caused a failure due
         to unhashable metadata in the schema!
         """
         frames = [self.gen_table().to_pandas() for _ in range(3)]
         arrow_tables = [pa.Table.from_pandas(df) for df in frames]
-        xdl = xdlake.DeltaTable(f"s3://test-xdlake/tests/{uuid4()}")
+        xdl = xdlake.DeltaTable(f"{self.scratch_folder}/{uuid4()}")
         for at in arrow_tables:
             xdl = xdl.write(at)
         assert_arrow_table_equal(pa.concat_tables(arrow_tables), xdl.to_pyarrow_table())
