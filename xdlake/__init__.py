@@ -31,16 +31,22 @@ class DeltaTable:
     def __init__(
         self,
         loc: str | storage.Location,
-        log_loc: str | storage.Location | None = None,
+        location_or_log: str | storage.Location | delta_log.DeltaLog | None = None,
         version: int | None = None,
         storage_options: dict | None = None,
     ):
         self.loc = storage.Location.with_location(loc, storage_options=storage_options)
-        if log_loc is None:
-            log_loc = self.loc.append_path("_delta_log")
-        else:
-            log_loc = storage.Location.with_location(log_loc, storage_options=storage_options)
-        self.dlog = delta_log.DeltaLog.with_location(log_loc, version=version)
+        match location_or_log:
+            case delta_log.DeltaLog():
+                self.dlog = location_or_log
+            case None | str() | storage.Location():
+                if location_or_log is None:
+                    log_loc = self.loc.append_path("_delta_log")
+                else:
+                    log_loc = storage.Location.with_location(location_or_log, storage_options=storage_options)
+                self.dlog = delta_log.DeltaLog.with_location(log_loc, version=version)
+            case _:
+                raise TypeError(f"Unexpected type for 'location_or_log': {type(location_or_log)}")
         if self.dlog.entries:
             self.adds = self.dlog.add_actions()
             self.partition_columns = self.dlog.partition_columns()
@@ -166,7 +172,7 @@ class DeltaTable:
         schema = self.dlog.evaluate_schema(ds.schema, mode, schema_mode)
         new_add_actions = self.write_data(ds, partition_by, write_arrow_dataset_options)
         entry = self.dlog.entry_for_write_mode(mode, schema, new_add_actions, partition_by)
-        return type(self)(self.loc, self.dlog.commit(entry).loc)
+        return type(self)(self.loc, self.dlog.commit(entry))
 
     def import_refs(
         self,
@@ -203,7 +209,7 @@ class DeltaTable:
         for child_ds in ds.children:
             new_add_actions.extend(self.add_actions_for_foreign_dataset(child_ds))
         entry = self.dlog.entry_for_write_mode(mode, schema, new_add_actions, partition_by)
-        return type(self)(self.loc, self.dlog.commit(entry).loc)
+        return type(self)(self.loc, self.dlog.commit(entry))
 
     def clone(self, dst_loc: str | storage.Location, dst_log_loc: str | None = None) -> "DeltaTable":
         """Clone the DeltaTable
@@ -282,7 +288,7 @@ class DeltaTable:
             num_copied_rows=num_copied_rows,
             num_deleted_rows=num_deleted_rows,
         )
-        return type(self)(self.loc, self.dlog.commit(new_entry).loc)
+        return type(self)(self.loc, self.dlog.commit(new_entry))
 
     def write_data(
         self,
