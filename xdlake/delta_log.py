@@ -681,7 +681,6 @@ class DeltaLog:
         entry = DeltaLogEntry()
         if 0 == self.version_to_write:
             entry = DeltaLogEntry.commit_create_table(self.loc.path, schema, partition_by, add_actions)
-            self.loc.mkdir()
         elif WriteMode.append == mode:
             entry = DeltaLogEntry.commit_append_table(partition_by, add_actions, schema)
         elif WriteMode.overwrite == mode:
@@ -690,6 +689,8 @@ class DeltaLog:
         return entry
 
     def commit(self, entry: DeltaLogEntry) -> "DeltaLog":
+        if 0 == self.version_to_write:
+            self.loc.mkdir()
         with self.loc.append_path(utils.filename_for_version(self.version_to_write)).open(mode="w") as fh:
             entry.write(fh)
         return type(self).with_location(self.loc)
