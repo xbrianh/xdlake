@@ -31,16 +31,22 @@ class DeltaTable:
     def __init__(
         self,
         loc: str | storage.Location,
-        log_loc: str | storage.Location | None = None,
+        location_or_log: str | storage.Location | delta_log.DeltaLog | None = None,
         version: int | None = None,
         storage_options: dict | None = None,
     ):
         self.loc = storage.Location.with_location(loc, storage_options=storage_options)
-        if log_loc is None:
-            self.log_loc = self.loc.append_path("_delta_log")
-        else:
-            self.log_loc = storage.Location.with_location(log_loc, storage_options=storage_options)
-        self.dlog = delta_log.DeltaLog.with_location(self.log_loc, version=version)
+        match location_or_log:
+            case delta_log.DeltaLog():
+                self.dlog = location_or_log
+            case None | str() | storage.Location():
+                if location_or_log is None:
+                    log_loc = self.loc.append_path("_delta_log")
+                else:
+                    log_loc = storage.Location.with_location(location_or_log, storage_options=storage_options)
+                self.dlog = delta_log.DeltaLog.with_location(log_loc, version=version)
+            case _:
+                raise TypeError(f"Unexpected type for 'location_or_log': {type(location_or_log)}")
         if self.dlog.entries:
             self.adds = self.dlog.add_actions()
             self.partition_columns = self.dlog.partition_columns()
@@ -70,7 +76,7 @@ class DeltaTable:
         Returns:
             DeltaTable: A new DeltaTable instance.
         """
-        return type(self)(self.loc, self.log_loc, version=version)
+        return type(self)(self.loc, self.dlog.loc, version=version)
 
     def add_action_to_fragment(self, add: delta_log.Add) -> tuple[storage.Location, pa.dataset.Fragment]:
         """Convert a delta log add action to a pyarrow dataset fragment.
@@ -165,8 +171,8 @@ class DeltaTable:
         ds = dataset_utils.union_dataset(data)
         schema = self.dlog.evaluate_schema(ds.schema, mode, schema_mode)
         new_add_actions = self.write_data(ds, partition_by, write_arrow_dataset_options)
-        self.write_deltalog_entry(mode, schema, new_add_actions, partition_by)
-        return type(self)(self.loc, self.log_loc)
+        entry = self.dlog.entry_for_write_mode(mode, schema, new_add_actions, partition_by)
+        return type(self)(self.loc, self.dlog.commit(entry))
 
     def import_refs(
         self,
@@ -202,8 +208,8 @@ class DeltaTable:
         new_add_actions = list()
         for child_ds in ds.children:
             new_add_actions.extend(self.add_actions_for_foreign_dataset(child_ds))
-        self.write_deltalog_entry(mode, schema, new_add_actions, partition_by)
-        return type(self)(self.loc, self.log_loc)
+        entry = self.dlog.entry_for_write_mode(mode, schema, new_add_actions, partition_by)
+        return type(self)(self.loc, self.dlog.commit(entry))
 
     def clone(self, dst_loc: str | storage.Location, dst_log_loc: str | None = None) -> "DeltaTable":
         """Clone the DeltaTable
@@ -282,9 +288,7 @@ class DeltaTable:
             num_copied_rows=num_copied_rows,
             num_deleted_rows=num_deleted_rows,
         )
-        with self.log_loc.append_path(utils.filename_for_version(self._version_to_write)).open(mode="w") as fh:
-            new_entry.write(fh)
-        return type(self)(self.loc, self.log_loc)
+        return type(self)(self.loc, self.dlog.commit(new_entry))
 
     def write_data(
         self,
@@ -375,32 +379,3 @@ class DeltaTable:
             )
 
         return add_actions
-
-    def write_deltalog_entry(
-        self,
-        mode,
-        schema: delta_log.Schema,
-        add_actions: list[delta_log.Add],
-        partition_by: list | None = None,
-    ):
-        """Write a new delta log entry.
-
-        Args:
-            mode (WriteMode): Write mode.
-            schema (delta_log.Schema): Schema.
-            add_actions (list[delta_log.Add]): Add actions.
-            partition_by (list[str], optional): Partition
-        """
-        partition_by = partition_by or list()
-        new_entry = delta_log.DeltaLogEntry()
-        if 0 == self._version_to_write:
-            new_entry = delta_log.DeltaLogEntry.commit_create_table(self.log_loc.path, schema, partition_by, add_actions)
-            self.log_loc.mkdir()
-        elif delta_log.WriteMode.append == mode:
-            new_entry = delta_log.DeltaLogEntry.commit_append_table(partition_by, add_actions, schema)
-        elif delta_log.WriteMode.overwrite == mode:
-            existing_add_actions = self.dlog.add_actions().values()
-            new_entry = delta_log.DeltaLogEntry.commit_overwrite_table(partition_by, existing_add_actions, add_actions)
-
-        with self.log_loc.append_path(utils.filename_for_version(self._version_to_write)).open(mode="w") as fh:
-            new_entry.write(fh)
