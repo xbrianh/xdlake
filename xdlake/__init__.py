@@ -1,4 +1,3 @@
-import re
 import functools
 import operator
 from uuid import uuid4
@@ -11,38 +10,6 @@ import pyarrow.dataset
 import pyarrow.parquet
 
 from xdlake import delta_log, dataset_utils, storage, utils
-
-
-_log_entry_filename_re = re.compile("^\d+\.json$")
-
-
-def read_delta_log(
-    loc: str | storage.Location,
-    version: int | None = None,
-    storage_options: dict | None = None,
-) -> delta_log.DeltaLog:
-    """Read a delta table transaction log.
-
-    Args:
-        loc (str | Location): Root of the transaction log directory.
-        version (int, otional): Read log entries up to this version.
-        storage_options (dict, optional): keyword arguments to pass to fsspec.filesystem
-
-    Returns:
-        delta_log.DeltaLog
-    """
-    loc = storage.Location.with_location(loc, storage_options=storage_options)
-    dlog = delta_log.DeltaLog()
-    if loc.exists():
-        for entry_loc in loc.list_files_sorted():
-            filename = entry_loc.basename()
-            if _log_entry_filename_re.match(filename):
-                entry_version = int(filename.split(".", 1)[0])
-                with entry_loc.open() as fh:
-                    dlog[entry_version] = delta_log.DeltaLogEntry.with_handle(fh)
-                if version in dlog:
-                    break
-    return dlog
 
 
 class DeltaTable:
@@ -73,7 +40,7 @@ class DeltaTable:
             self.log_loc = self.loc.append_path("_delta_log")
         else:
             self.log_loc = storage.Location.with_location(log_loc, storage_options=storage_options)
-        self.dlog = read_delta_log(self.log_loc, version=version)
+        self.dlog = delta_log.DeltaLog.with_location(self.log_loc, version=version)
         if self.dlog.entries:
             self.adds = self.dlog.add_actions()
             self.partition_columns = self.dlog.partition_columns()

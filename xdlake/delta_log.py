@@ -1,3 +1,4 @@
+import re
 import json
 import datetime
 from enum import Enum
@@ -9,7 +10,7 @@ from typing import IO, Iterable, Sequence
 
 import pyarrow as pa
 
-from xdlake import utils
+from xdlake import storage, utils
 
 
 CLIENT_VERSION = "xdlake-0.0.0"
@@ -530,6 +531,8 @@ class DeltaLogEntry:
 class DeltaLog:
     """The transaction log of a delta table."""
 
+    _log_entry_filename_re = re.compile("^\d+\.json$")
+
     def __init__(self):
         self.entries = dict()
 
@@ -541,6 +544,36 @@ class DeltaLog:
 
     def __contains__(self, key):
         return key in self.entries
+
+    @classmethod
+    def with_location(
+        cls,
+        loc: str | storage.Location,
+        version: int | None = None,
+        storage_options: dict | None = None,
+    ) -> "DeltaLog":
+        """Read a delta table transaction log.
+
+        Args:
+            loc (str | Location): Root of the transaction log directory.
+            version (int, otional): Read log entries up to this version.
+            storage_options (dict, optional): keyword arguments to pass to fsspec.filesystem
+
+        Returns:
+            delta_log.DeltaLog
+        """
+        loc = storage.Location.with_location(loc, storage_options=storage_options)
+        dlog = cls()
+        if loc.exists():
+            for entry_loc in loc.list_files_sorted():
+                filename = entry_loc.basename()
+                if cls._log_entry_filename_re.match(filename):
+                    entry_version = int(filename.split(".", 1)[0])
+                    with entry_loc.open() as fh:
+                        dlog[entry_version] = DeltaLogEntry.with_handle(fh)
+                    if version in dlog:
+                        break
+        return dlog
 
     @property
     def version(self) -> int:
