@@ -2,8 +2,9 @@ import os
 import unittest
 from uuid import uuid4
 from unittest import mock
+from tempfile import TemporaryDirectory
+from contextlib import contextmanager
 
-import xdlake
 from xdlake import delta_log, utils
 
 
@@ -57,6 +58,26 @@ class TestDeltaLog(unittest.TestCase):
                 dlog = delta_log.DeltaLog.with_location(LOGDIR)
                 dlog.entries[len(dlog.entries)] = tc
                 self.assertEqual(expected_partition_columns, dlog.partition_columns())
+
+    def test_commit(self):
+        obj = mock.MagicMock()
+
+        @contextmanager
+        def commit_ctx(loc):
+            try:
+                obj(loc.path)
+                yield
+            finally:
+                pass
+
+        with TemporaryDirectory() as scratch:
+            dlog = delta_log.DeltaLog.with_location(f"{scratch}/_delta_log")
+            write_loc = dlog.loc.append_path("00000000000000000000.json")
+            with write_loc.open(mode="w") as fh:
+                fh.write("")
+            obj.assert_not_called()
+            dlog.commit(mock.MagicMock(), commit_ctx)
+            obj.assert_called_once_with(write_loc.path)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 import functools
 import operator
 from uuid import uuid4
+from contextlib import contextmanager
 from collections import defaultdict
 from typing import Iterable
 
@@ -172,7 +173,7 @@ class DeltaTable:
         schema = self.dlog.evaluate_schema(ds.schema, mode, schema_mode)
         new_add_actions = self.write_data(ds, partition_by, write_arrow_dataset_options)
         entry = self.dlog.entry_for_write_mode(mode, schema, new_add_actions, partition_by)
-        return type(self)(self.loc, self.dlog.commit(entry))
+        return self.commit(entry)
 
     def import_refs(
         self,
@@ -209,7 +210,7 @@ class DeltaTable:
         for child_ds in ds.children:
             new_add_actions.extend(self.add_actions_for_foreign_dataset(child_ds))
         entry = self.dlog.entry_for_write_mode(mode, schema, new_add_actions, partition_by)
-        return type(self)(self.loc, self.dlog.commit(entry))
+        return self.commit(entry)
 
     def clone(self, dst_loc: str | storage.Location, dst_log_loc: str | None = None) -> "DeltaTable":
         """Clone the DeltaTable
@@ -288,7 +289,7 @@ class DeltaTable:
             num_copied_rows=num_copied_rows,
             num_deleted_rows=num_deleted_rows,
         )
-        return type(self)(self.loc, self.dlog.commit(new_entry))
+        return self.commit(new_entry)
 
     def write_data(
         self,
@@ -379,3 +380,26 @@ class DeltaTable:
             )
 
         return add_actions
+
+    @contextmanager
+    def commit_context(self, loc: storage.Location):
+        """Context for transaction log writes.
+
+        Locking can be implimented by overriding this method. The default behavior is to raise if loc exists.
+
+        Args:
+            loc (storage.Location): The location where the new transaction log etnry will be written.
+
+        Returns:
+            A context manager.
+        """
+        try:
+            if loc.exists():
+                raise FileExistsError("This transaction log version already exists!")
+            yield
+        finally:
+            pass
+
+    def commit(self, entry: delta_log.DeltaLogEntry) -> "DeltaTable":
+        new_dlog = self.dlog.commit(entry, self.commit_context)
+        return type(self)(self.loc, new_dlog)
