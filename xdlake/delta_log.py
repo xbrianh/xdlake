@@ -533,8 +533,8 @@ class DeltaLog:
 
     _log_entry_filename_re = re.compile("^\d+\.json$")
 
-    def __init__(self, location: storage.Location | None = None):
-        self.entries = dict()
+    def __init__(self, location: storage.Location):
+        self.entries: dict[int, DeltaLogEntry] = dict()
         self.loc = location
 
     def __setitem__(self, key, val):
@@ -616,7 +616,7 @@ class DeltaLog:
 
     def partition_columns(self) -> list:
         """The partition columns of the latest version."""
-        cols = list()
+        cols: list | None = list()
         for v in sorted(self.entries.keys(), reverse=True):
             cols = self.entries[v].partition_columns()
             if cols is not None:
