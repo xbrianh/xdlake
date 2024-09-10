@@ -533,8 +533,9 @@ class DeltaLog:
 
     _log_entry_filename_re = re.compile("^\d+\.json$")
 
-    def __init__(self):
+    def __init__(self, location: storage.Location | None = None):
         self.entries = dict()
+        self.loc = location
 
     def __setitem__(self, key, val):
         self.entries[key] = val
@@ -562,10 +563,9 @@ class DeltaLog:
         Returns:
             delta_log.DeltaLog
         """
-        loc = storage.Location.with_location(loc, storage_options=storage_options)
-        dlog = cls()
-        if loc.exists():
-            for entry_loc in loc.list_files_sorted():
+        dlog = cls(storage.Location.with_location(loc, storage_options=storage_options))
+        if dlog.loc.exists():
+            for entry_loc in dlog.loc.list_files_sorted():
                 filename = entry_loc.basename()
                 if cls._log_entry_filename_re.match(filename):
                     entry_version = int(filename.split(".", 1)[0])
@@ -587,6 +587,13 @@ class DeltaLog:
             return sorted(self.entries.keys())
         else:
             raise ValueError("This delta log is empty!")
+    @property
+    def version_to_write(self) -> int:
+        """The next log version."""
+        try:
+            return 1 + self.versions[-1]
+        except ValueError:
+            return 0
 
     def schema(self) -> Schema:
         """The latest schema in the log."""
@@ -654,6 +661,38 @@ class DeltaLog:
                 elif existing_schema != schema:
                     raise ValueError("Schema mismatch")
             return schema
+
+    def entry_for_write_mode(
+        self,
+        mode,
+        schema: Schema,
+        add_actions: list[Add],
+        partition_by: list | None = None,
+    ):
+        """Write a new delta log entry.
+
+        Args:
+            mode (WriteMode): Write mode.
+            schema (Schema): Schema.
+            add_actions (list[Add]): Add actions.
+            partition_by (list[str], optional): Partition
+        """
+        partition_by = partition_by or list()
+        entry = DeltaLogEntry()
+        if 0 == self.version_to_write:
+            entry = DeltaLogEntry.commit_create_table(self.loc.path, schema, partition_by, add_actions)
+            self.loc.mkdir()
+        elif WriteMode.append == mode:
+            entry = DeltaLogEntry.commit_append_table(partition_by, add_actions, schema)
+        elif WriteMode.overwrite == mode:
+            existing_add_actions = self.add_actions().values()
+            entry = DeltaLogEntry.commit_overwrite_table(partition_by, existing_add_actions, add_actions)
+        return entry
+
+    def commit(self, entry: DeltaLogEntry) -> "DeltaLog":
+        with self.loc.append_path(utils.filename_for_version(self.version_to_write)).open(mode="w") as fh:
+            entry.write(fh)
+        return type(self).with_location(self.loc)
 
 
 def generate_remove_acctions(add_actions: Iterable[Add]) -> list[Remove]:
