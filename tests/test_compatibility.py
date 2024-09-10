@@ -87,7 +87,7 @@ class TestCompatibility(TableGenMixin, unittest.TestCase):
         num_start_rows = xdl.to_pyarrow_table().to_pandas().shape[0]
         xdl = xdl.delete((((pc.field("float64") > pc.scalar(0.9)) | (pc.field("cats") == pc.scalar("A")))))
         deltalake.DeltaTable(dt_loc).delete("float64 > 0.9 or cats == 'A'")
-        deltalake.DeltaTable(dt_loc).optimize()
+        deltalake.DeltaTable(dt_loc).optimize.compact()
 
         with self.subTest("should have actually deleted rows"):
             self.assertLess(xdl.to_pyarrow_table().to_pandas().shape[0], num_start_rows)

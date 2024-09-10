@@ -1,6 +1,6 @@
 build
 pandas
-deltalake>=0.18.1
+deltalake>=0.19.2
 ruff-lsp
 mypy
 gcsfs
