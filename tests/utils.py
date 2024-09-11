@@ -81,7 +81,7 @@ class TableGen:
         for name, choices in self.categoricals.items():
             d = [random.choice(choices) for _ in range(len(t))]
             t = t.append_column(name, [d])
-        t = t.append_column("order", pa.array(order, pa.float64()))
+        t = t.append_column("order", pa.array(order, pa.int64()))
         return t
 
     @contextmanager
