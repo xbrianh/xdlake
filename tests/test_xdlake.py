@@ -234,6 +234,7 @@ class TestXdLake(BaseXdlakeTest):
         expected_path = f"{loc}/_delta_log/00000000000000000000.json"
 
         xdl = xdlake.DeltaTable(loc)
+        os.mkdir(os.path.dirname(expected_path))
         with open(expected_path, "w") as fh:
             fh.write("")
         with self.assertRaises(FileExistsError):
