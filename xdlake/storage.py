@@ -1,4 +1,5 @@
 import os
+from contextlib import nullcontext, suppress
 from urllib.parse import urlparse
 from typing import Any, Generator
 
@@ -158,9 +159,11 @@ class Location:
         """Return whether the location exists."""
         return self.fs.exists(self.path)
 
-    def mkdir(self):
+    def mkdir(self, exists_ok: bool=False):
         """Create the location as a directory."""
-        self.fs.mkdir(self.path)
+        ctx = suppress if exists_ok else nullcontext
+        with ctx(FileExistsError):
+            self.fs.mkdir(self.path)
 
     def list_files(self) -> Generator["Location", None, None]:
         """List files in the location.

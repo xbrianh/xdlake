@@ -84,6 +84,14 @@ class TestStorage(unittest.TestCase):
         self.assertEqual(loc.append_path("alskdf").storage_options, expected_storage_options)
         self.assertEqual(storage.absloc("ljlj", loc).storage_options, expected_storage_options)
 
+    def test_mkdir(self):
+        path = f"{self.scratch_folder}/{uuid4()}"
+        loc = storage.Location.with_location(path)
+        loc.mkdir()
+        with self.assertRaises(FileExistsError):
+            loc.mkdir()
+        loc.mkdir(exists_ok=True)
+
 
 if __name__ == '__main__':
     unittest.main()
