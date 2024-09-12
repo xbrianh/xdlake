@@ -1,7 +1,8 @@
 import os
 import unittest
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from uuid import uuid4
+from unittest import mock
 
 import pyarrow as pa
 import pyarrow.dataset
@@ -227,6 +228,36 @@ class TestXdLake(BaseXdlakeTest):
         assert_arrow_table_equal(pa.concat_tables(arrow_tables), xdl.to_pyarrow_table())
         self._test_delete(xdl)
         self._test_clone(xdl)
+
+    def test_commit(self):
+        loc = f"{self.scratch_folder}"
+        expected_path = f"{loc}/_delta_log/00000000000000000000.json"
+
+        xdl = xdlake.DeltaTable(loc)
+        os.mkdir(os.path.dirname(expected_path))
+        with open(expected_path, "w") as fh:
+            fh.write("")
+        with self.assertRaises(FileExistsError):
+            xdl = xdl.commit(mock.MagicMock())
+
+    def test_commit_context(self):
+        loc = f"{self.scratch_folder}"
+        expected_path = f"{loc}/_delta_log/00000000000000000000.json"
+        mock_obj = mock.MagicMock()
+
+        class TestDeltaTable(xdlake.DeltaTable):
+            @contextmanager
+            def commit_context(s, loc):
+                try:
+                    mock_obj(loc.path)
+                    yield
+                finally:
+                    pass
+
+        xdl = TestDeltaTable(loc)
+        mock_obj.assert_not_called()
+        xdl.commit(mock.MagicMock())
+        mock_obj.assert_called_once_with(expected_path)
 
 
 if __name__ == '__main__':

@@ -3,6 +3,7 @@ import json
 import datetime
 from enum import Enum
 from uuid import uuid4
+from contextlib import nullcontext
 from collections import defaultdict
 from dataclasses import dataclass, asdict, field, fields, replace
 from collections.abc import ValuesView
@@ -688,12 +689,14 @@ class DeltaLog:
             entry = DeltaLogEntry.commit_overwrite_table(partition_by, existing_add_actions, add_actions)
         return entry
 
-    def commit(self, entry: DeltaLogEntry) -> "DeltaLog":
+    def commit(self, entry: DeltaLogEntry, context = nullcontext) -> "DeltaLog":
         if 0 == self.version_to_write:
-            self.loc.mkdir()
-        with self.loc.append_path(utils.filename_for_version(self.version_to_write)).open(mode="w") as fh:
-            entry.write(fh)
-        return type(self).with_location(self.loc)
+            self.loc.mkdir(exists_ok=True)
+        loc = self.loc.append_path(utils.filename_for_version(self.version_to_write))
+        with context(loc):
+            with loc.open(mode="w") as fh:
+                entry.write(fh)
+            return type(self).with_location(self.loc)
 
 
 def generate_remove_acctions(add_actions: Iterable[Add]) -> list[Remove]:
