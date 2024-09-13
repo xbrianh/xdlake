@@ -79,6 +79,21 @@ class TestDeltaLog(unittest.TestCase):
             dlog.commit(mock.MagicMock(), commit_ctx)
             obj.assert_called_once_with(write_loc.path)
 
+    def test_load_as_version(self):
+        dlog = delta_log.DeltaLog("loc")
+        expected_entries = [f"{uuid4()}" for _ in range(5)]
+        for i, entry in enumerate(expected_entries):
+            dlog[i] = entry
+
+        for i in reversed(range(5)):
+            foo = dlog.load_as_version(i)
+            for v in foo.versions:
+                assert foo[v] == expected_entries[v]
+
+        with mock.patch("xdlake.delta_log.DeltaLog.load_as_version") as mock_load_as_version:
+            dlog.load_as_version(0).load_as_version()
+            mock_load_as_version.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

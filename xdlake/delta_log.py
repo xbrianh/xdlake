@@ -577,6 +577,26 @@ class DeltaLog:
                         break
         return dlog
 
+    def load_as_version(self, version: int | None = None):
+        """Load the delta log up to a specific version.
+
+        Args:
+            version (int, optional): The version to load up to.
+
+        Returns:
+            DeltaLog: A new DeltaLog object
+        """
+        if version in self.versions:
+            dlog = type(self)(self.loc)
+            for v in self.versions:
+                if v <= version:
+                    dlog[v] = self[v]
+                else:
+                    break
+            return dlog
+        else:
+            return type(self).with_location(self.loc)
+
     @property
     def version(self) -> int:
         """The largest version in the log."""
