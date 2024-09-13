@@ -281,7 +281,7 @@ class DeltaTable:
             self.partition_columns,
             write_arrow_dataset_options,
         )
-        new_entry = delta_log.DeltaLogEntry.commit_delete_table(
+        new_entry = delta_log.DeltaLogEntry.delete_table(
             predicate="pyarrow expression",
             add_actions_to_remove=adds_to_remove.values(),
             add_actions=new_add_actions,
@@ -298,7 +298,7 @@ class DeltaTable:
         curr_add_actions = self.dlog.add_actions()
         restore_add_actions = [prev_add_actions[p] for p in prev_add_actions if p not in curr_add_actions]
         add_actions_to_remove = [curr_add_actions[p] for p in curr_add_actions if p not in prev_add_actions]
-        new_entry = delta_log.DeltaLogEntry.commit_restore_table(
+        new_entry = delta_log.DeltaLogEntry.restore_table(
             read_version=self.version,
             restore_version=restore_version,
             restore_schema=prev_schema,

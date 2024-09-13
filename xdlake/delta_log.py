@@ -460,7 +460,7 @@ class DeltaLogEntry:
         return entry
 
     @classmethod
-    def commit_create_table(cls, path: str, schema: Schema, partition_by: list, add_actions: list[Add]) -> "DeltaLogEntry":
+    def create_table(cls, path: str, schema: Schema, partition_by: list, add_actions: list[Add]) -> "DeltaLogEntry":
         """Create a new DeltaLogEntry for creating a table.
 
         Args:
@@ -478,7 +478,7 @@ class DeltaLogEntry:
         return cls.with_actions([protocol, table_metadata, *add_actions, commit])
 
     @classmethod
-    def commit_append_table(cls, partition_by: list, add_actions: list[Add], schema: Schema | None = None) -> "DeltaLogEntry":
+    def append_table(cls, partition_by: list, add_actions: list[Add], schema: Schema | None = None) -> "DeltaLogEntry":
         """Create a new DeltaLogEntry for appending to a table.
 
         Args:
@@ -497,7 +497,7 @@ class DeltaLogEntry:
         return cls.with_actions(actions)
 
     @classmethod
-    def commit_overwrite_table(
+    def overwrite_table(
         cls,
         partition_by: list,
         existing_add_actions: Iterable[Add],
@@ -518,7 +518,7 @@ class DeltaLogEntry:
         return cls.with_actions([*remove_actions, *add_actions, commit])
 
     @classmethod
-    def commit_delete_table(
+    def delete_table(
         cls,
         *,
         predicate: str,
@@ -552,7 +552,7 @@ class DeltaLogEntry:
         return cls.with_actions([*remove_actions, *add_actions, commit])
 
     @classmethod
-    def commit_restore_table(
+    def restore_table(
         cls,
         *,
         read_version: int,
@@ -744,12 +744,12 @@ class DeltaLog:
         partition_by = partition_by or list()
         entry = DeltaLogEntry()
         if 0 == self.version_to_write:
-            entry = DeltaLogEntry.commit_create_table(self.loc.path, schema, partition_by, add_actions)
+            entry = DeltaLogEntry.create_table(self.loc.path, schema, partition_by, add_actions)
         elif WriteMode.append == mode:
-            entry = DeltaLogEntry.commit_append_table(partition_by, add_actions, schema)
+            entry = DeltaLogEntry.append_table(partition_by, add_actions, schema)
         elif WriteMode.overwrite == mode:
             existing_add_actions = self.add_actions().values()
-            entry = DeltaLogEntry.commit_overwrite_table(partition_by, existing_add_actions, add_actions)
+            entry = DeltaLogEntry.overwrite_table(partition_by, existing_add_actions, add_actions)
         return entry
 
     def commit(self, entry: DeltaLogEntry, context = nullcontext) -> "DeltaLog":

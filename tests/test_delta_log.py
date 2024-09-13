@@ -54,7 +54,7 @@ class TestDeltaLog(unittest.TestCase):
     def test_partition_columns(self):
         for expected_partition_columns in (list(), [f"{uuid4()}" for _ in range(3)]):
             with self.subTest(expected=expected_partition_columns):
-                tc = delta_log.DeltaLogEntry.commit_overwrite_table(expected_partition_columns, [], [])
+                tc = delta_log.DeltaLogEntry.overwrite_table(expected_partition_columns, [], [])
                 dlog = delta_log.DeltaLog.with_location(LOGDIR)
                 dlog.entries[len(dlog.entries)] = tc
                 self.assertEqual(expected_partition_columns, dlog.partition_columns())
