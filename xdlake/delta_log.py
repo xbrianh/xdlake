@@ -610,6 +610,7 @@ class DeltaLog:
             return sorted(self.entries.keys())
         else:
             raise ValueError("This delta log is empty!")
+
     @property
     def version_to_write(self) -> int:
         """The next log version."""
@@ -620,7 +621,7 @@ class DeltaLog:
 
     def schema(self) -> Schema:
         """The latest schema in the log."""
-        for v in sorted(self.entries.keys(), reverse=True):
+        for v in reversed(self.versions):
             for a in self.entries[v].actions:
                 if isinstance(a, TableMetadata):
                     return a.schema
@@ -629,7 +630,7 @@ class DeltaLog:
     def add_actions(self) -> dict[str, Add]:
         """Add actions as of the latest version."""
         adds = dict()
-        for v in sorted(self.entries.keys()):
+        for v in self.versions:
             entry = self.entries[v]
             for add in entry.add_actions():
                 adds[add.path] = add
