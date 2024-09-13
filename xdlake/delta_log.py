@@ -319,7 +319,6 @@ class TableCommit(DeltaLogAction):
 
 def _data_type_from_arrow(_t):
     if isinstance(_t, pa.lib.TimestampType):
-        assert _t.unit == "us"
         return "timestamp"
     elif _t not in ARROW_TO_DELTA_TYPE:
         err = f"Cannot handle arrow type '{_t}', type={type(_t)}"
