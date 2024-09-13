@@ -228,7 +228,7 @@ class TableCommit(_DeltaLogAction):
             return {}
 
     @classmethod
-    def create_with_parms(cls, location: str, timestamp: int, metadata: TableMetadata, protocol: Protocol):
+    def create(cls, location: str, timestamp: int, metadata: TableMetadata, protocol: Protocol):
         op_parms = {
             TableOperationParm.METADATA: metadata.json(),
             TableOperationParm.PROTOCOL: protocol.json(),
@@ -238,7 +238,7 @@ class TableCommit(_DeltaLogAction):
         return cls(timestamp=timestamp, operationParameters=op_parms, operation=TableCommitOperation.CREATE)
 
     @classmethod
-    def write_with_parms(cls, timestamp: int, mode: str, partition_by: list | None = None):
+    def write(cls, timestamp: int, mode: str, partition_by: list | None = None):
         op_parms = {
             TableOperationParm.PARTITION_BY: partition_by or list(),
             TableOperationParm.MODE: mode,
@@ -246,7 +246,7 @@ class TableCommit(_DeltaLogAction):
         return cls(timestamp=timestamp, operationParameters=op_parms, operation=TableCommitOperation.WRITE)
 
     @classmethod
-    def delete_with_parms(
+    def delete(
         cls,
         timestamp: int,
         predicate: str,
@@ -453,7 +453,7 @@ class DeltaLogEntry:
         """
         protocol = Protocol()
         table_metadata = TableMetadata(schemaString=schema.json(), partitionColumns=partition_by)
-        commit = TableCommit.create_with_parms(path, utils.timestamp(), table_metadata, protocol)
+        commit = TableCommit.create(path, utils.timestamp(), table_metadata, protocol)
         return cls.with_actions([protocol, table_metadata, *add_actions, commit])
 
     @classmethod
@@ -468,7 +468,7 @@ class DeltaLogEntry:
         Returns:
             DeltaLogEntry: A new DeltaLogEntry object
         """
-        commit = TableCommit.write_with_parms(utils.timestamp(), mode=WriteMode.append.value, partition_by=partition_by)
+        commit = TableCommit.write(utils.timestamp(), mode=WriteMode.append.value, partition_by=partition_by)
         actions = add_actions + [commit]
         if schema is not None:
             table_metadata = TableMetadata(schemaString=schema.json(), partitionColumns=partition_by)
@@ -492,7 +492,7 @@ class DeltaLogEntry:
         Returns:
             DeltaLogEntry: A new DeltaLogEntry object
         """
-        commit = TableCommit.write_with_parms(utils.timestamp(), mode=WriteMode.overwrite.value, partition_by=partition_by)
+        commit = TableCommit.write(utils.timestamp(), mode=WriteMode.overwrite.value, partition_by=partition_by)
         remove_actions = generate_remove_acctions(existing_add_actions)
         return cls.with_actions([*remove_actions, *add_actions, commit])
 
@@ -526,7 +526,7 @@ class DeltaLogEntry:
             "num_copied_rows": num_copied_rows,
             "num_deleted_rows": num_deleted_rows,
         }
-        commit = TableCommit.delete_with_parms(utils.timestamp(), predicate, read_version, operation_metrics)
+        commit = TableCommit.delete(utils.timestamp(), predicate, read_version, operation_metrics)
         remove_actions = generate_remove_acctions(add_actions_to_remove)
         return cls.with_actions([*remove_actions, *add_actions, commit])
 
