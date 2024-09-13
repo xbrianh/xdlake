@@ -2,7 +2,10 @@ import unittest
 from uuid import uuid4
 
 import deltalake
+import numpy as np
+import pyarrow as pa
 import pyarrow.compute as pc
+from pandas.testing import assert_frame_equal
 
 import xdlake
 
@@ -94,6 +97,40 @@ class TestCompatibility(TableGenMixin, unittest.TestCase):
 
         with self.subTest("should aggree"):
             assert_arrow_table_equal(deltalake.DeltaTable(xdl.loc.path), xdlake.DeltaTable(dt_loc).to_pyarrow_table())
+
+    def test_merge(self):
+        dt_loc = f"{self.scratch_folder}/{uuid4()}"
+        for _ in range(5):
+            deltalake.write_deltalake(dt_loc, self.gen_table(), partition_by=self.partition_by, mode="append")
+
+        pre_merge_df = deltalake.DeltaTable(dt_loc).to_pandas().sort_values("order").reset_index(drop=True)
+        merge_table = gen_merge_table(pre_merge_df.shape[0])
+        deltalake.DeltaTable(dt_loc).merge(
+            merge_table,
+            "source.order = target.order",
+            source_alias="source",
+            target_alias="target",
+        ).when_matched_update(
+            {"float64": "source.bars"}
+        ).execute()
+        post_merge_df = deltalake.DeltaTable(dt_loc).to_pandas().sort_values("order").reset_index(drop=True)
+
+        assert_frame_equal(pre_merge_df.drop(columns=["float64"]), post_merge_df.drop(columns=["float64"]))
+        with self.assertRaises(AssertionError):
+            assert_frame_equal(pre_merge_df, post_merge_df)
+
+        with self.subTest("xdlake should read the merged table"):
+            assert_arrow_table_equal(deltalake.DeltaTable(dt_loc), xdlake.DeltaTable(dt_loc))
+
+
+def gen_merge_table(num_rows):
+    data = dict()
+    data["order"] = pa.array(range(num_rows))
+    data["bars"] = pa.array(np.random.random(num_rows))
+    return pa.Table.from_arrays(
+        list(data.values()),
+        names=list(data.keys()),
+    )
 
 
 if __name__ == '__main__':
