@@ -195,10 +195,11 @@ class TableCommitOperation:
     WRITE = "WRITE"
     MERGE = "MERGE"
     DELETE = "DELETE"
+    RESTORE = "RESTORE"
     VACUUM_START = "VACUUM START"
     VACUUM_END = "VACUUM END"
     OPTIMIZE = "OPTIMIZE"
-    values = [CREATE, WRITE, MERGE, DELETE, VACUUM_START, VACUUM_END, OPTIMIZE]
+    values = [CREATE, WRITE, MERGE, DELETE, RESTORE, VACUUM_START, VACUUM_END, OPTIMIZE]
 
 @dataclass
 class TableCommit(_DeltaLogAction):

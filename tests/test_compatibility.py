@@ -122,6 +122,19 @@ class TestCompatibility(TableGenMixin, unittest.TestCase):
         with self.subTest("xdlake should read the merged table"):
             assert_arrow_table_equal(deltalake.DeltaTable(dt_loc), xdlake.DeltaTable(dt_loc))
 
+    def test_restore(self):
+        xdl = xdlake.DeltaTable(f"{self.scratch_folder}/{uuid4()}")
+        dt_loc = f"{self.scratch_folder}/{uuid4()}"
+        for _ in range(5):
+            at = self.gen_table()
+            xdl = xdl.write(at, partition_by=self.partition_by)
+            deltalake.write_deltalake(dt_loc, at, partition_by=self.partition_by, mode="append")
+
+        deltalake.DeltaTable(dt_loc).restore(2)
+
+        with self.subTest("should aggree"):
+            assert_arrow_table_equal(deltalake.DeltaTable(dt_loc), xdlake.DeltaTable(dt_loc).to_pyarrow_table())
+
 
 def gen_merge_table(num_rows):
     data = dict()
