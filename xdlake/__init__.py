@@ -291,6 +291,23 @@ class DeltaTable:
         )
         return self.commit(new_entry)
 
+    def restore(self, restore_version: int) -> "DeltaTable":
+        prev_dlog = self.dlog.load_as_version(restore_version)
+        prev_schema = prev_dlog.schema()
+        prev_add_actions = prev_dlog.add_actions()
+        curr_add_actions = self.dlog.add_actions()
+        restore_add_actions = [prev_add_actions[p] for p in prev_add_actions if p not in curr_add_actions]
+        add_actions_to_remove = [curr_add_actions[p] for p in curr_add_actions if p not in prev_add_actions]
+        new_entry = delta_log.DeltaLogEntry.commit_restore_table(
+            read_version=self.version,
+            restore_version=restore_version,
+            restore_schema=prev_schema,
+            restore_partition_by=prev_dlog.partition_columns(),
+            add_actions=restore_add_actions,
+            add_actions_to_remove=add_actions_to_remove,
+        )
+        return self.commit(new_entry)
+
     def write_data(
         self,
         ds: pa.dataset.Dataset,

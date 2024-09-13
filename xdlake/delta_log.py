@@ -265,6 +265,26 @@ class TableCommit(_DeltaLogAction):
             readVersion=read_version,
         )
 
+    @classmethod
+    def restore(
+        cls,
+        timestamp: int,
+        read_version: int,
+        restore_version: int,
+        operation_metrics: dict,
+    ):
+        op_parms = {
+            "version": restore_version,
+        }
+
+        return cls(
+            timestamp=timestamp,
+            operationParameters=op_parms,
+            operationMetrics=operation_metrics,
+            operation=TableCommitOperation.RESTORE,
+            readVersion=read_version,
+        )
+
 def _data_type_from_arrow(_t):
     if isinstance(_t, pa.lib.TimestampType):
         assert _t.unit == "us"
@@ -530,6 +550,26 @@ class DeltaLogEntry:
         commit = TableCommit.delete(utils.timestamp(), predicate, read_version, operation_metrics)
         remove_actions = generate_remove_acctions(add_actions_to_remove)
         return cls.with_actions([*remove_actions, *add_actions, commit])
+
+    @classmethod
+    def commit_restore_table(
+        cls,
+        *,
+        read_version: int,
+        restore_version: int,
+        restore_schema: Schema,
+        restore_partition_by: list[str],
+        add_actions_to_remove: Sequence[Add] | ValuesView[Add],
+        add_actions: Sequence[Add] | ValuesView[Add],
+    ) -> "DeltaLogEntry":
+        operation_metrics = {
+            "num_removed_files": len(add_actions_to_remove),
+            "num_restored_files": len(add_actions),
+        }
+        commit = TableCommit.restore(utils.timestamp(), read_version, restore_version, operation_metrics)
+        remove_actions = generate_remove_acctions(add_actions_to_remove)
+        table_metadata = TableMetadata(schemaString=restore_schema.json(), partitionColumns=restore_partition_by)
+        return cls.with_actions([table_metadata, *remove_actions, *add_actions, commit])
 
 class DeltaLog:
     """The transaction log of a delta table."""

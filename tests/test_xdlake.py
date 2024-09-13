@@ -54,7 +54,22 @@ class TestXdLake(BaseXdlakeTest):
             at = xdl.load_as_version(versions[-2]).to_pyarrow_table()
             assert_arrow_table_equal(df_expected, at)
 
-        self._test_delete(xdl)
+        xdl = self._test_delete(xdl)
+        xdl = self._test_restore(xdl)
+        xdl = self._test_clone(xdl)
+
+    def test_restore(self):
+        xdl = xdlake.DeltaTable(f"{self.scratch_folder}/{uuid4()}")
+        for _ in range(5):
+            xdl = xdl.write(self.gen_table(), partition_by=self.partition_by)
+        self._test_restore(xdl)
+        return
+        xdl = xdl.restore(2)
+        self.assertEqual(5, xdl.version)
+        assert_arrow_table_equal(
+            xdl.to_pyarrow_table(),
+            xdl.load_as_version(2).to_pyarrow_table(),
+        )
 
     def test_partition_column_change(self):
         tests = [
@@ -95,7 +110,9 @@ class TestXdLake(BaseXdlakeTest):
             xdl.to_pyarrow_table(),
         )
 
-        self._test_clone(xdl)
+        xdl = self._test_clone(xdl)
+        xdl = self._test_delete(xdl)
+        xdl = self._test_restore(xdl, 0)
 
     def test_remote_log(self):
         arrow_tables = [self.gen_table() for _ in range(3)]
@@ -109,8 +126,9 @@ class TestXdLake(BaseXdlakeTest):
                 for at in arrow_tables:
                     xdl = xdl.write(at)
                 assert_arrow_table_equal(expected, xdl.to_pyarrow_table())
-                self._test_clone(xdl)
-                self._test_delete(xdl)
+                xdl = self._test_clone(xdl)
+                xdl = self._test_delete(xdl)
+                xdl = self._test_restore(xdl)
 
     def test_write_mode_error_ignore(self):
         expected = self.gen_table()
@@ -146,7 +164,9 @@ class TestXdLake(BaseXdlakeTest):
             assert_arrow_table_equal(expected, xdl.to_pyarrow_table())
             self._test_clone(xdl)
 
-        self._test_delete(xdl)
+        xdl = self._test_delete(xdl)
+        xdl = self._test_restore(xdl)
+        xdl = self._test_clone(xdl)
 
     def test_import_refs(self):
         paths = [os.path.join(f"{self.scratch_folder}", f"{uuid4()}", f"{uuid4()}.parquet") for _ in range(2)]
@@ -187,8 +207,9 @@ class TestXdLake(BaseXdlakeTest):
             pa.concat_tables(arrow_tables),
             xdl.to_pyarrow_table()
         )
-        self._test_clone(xdl)
-        self._test_delete(xdl)
+        xdl = self._test_clone(xdl)
+        xdl = self._test_delete(xdl)
+        xdl = self._test_restore(xdl)
 
     def test_clone(self):
         partition_by = self.partition_by[:1]
@@ -206,15 +227,17 @@ class TestXdLake(BaseXdlakeTest):
                 cloned = cloned.write(at, partition_by=partition_by)
             assert_arrow_table_equal(pa.concat_tables([*arrow_tables, *more_arrow_tables]), cloned.to_pyarrow_table())
         self._test_delete(xdl)
-        self._test_delete(cloned)
+        xdl = self._test_delete(cloned)
+        self._test_restore(xdl)
 
     def test_delete(self):
         xdl = xdlake.DeltaTable(f"{self.scratch_folder}/{uuid4()}")
         arrow_tables = [self.gen_table() for _ in range(3)]
         for at in arrow_tables:
             xdl = xdl.write(at, partition_by=self.partition_by)
-        self._test_delete(xdl)
-        self._test_clone(xdl)
+        xdl = self._test_delete(xdl)
+        xdl = self._test_clone(xdl)
+        xdl = self._test_restore(xdl)
 
     def test_from_pandas(self):
         """A common usage pattern is to derive arrow tables from pandas frames. This surprisingly caused a failure due

@@ -131,9 +131,10 @@ class TestCompatibility(TableGenMixin, unittest.TestCase):
             deltalake.write_deltalake(dt_loc, at, partition_by=self.partition_by, mode="append")
 
         deltalake.DeltaTable(dt_loc).restore(2)
+        xdl.restore(2)
 
         with self.subTest("should aggree"):
-            assert_arrow_table_equal(deltalake.DeltaTable(dt_loc), xdlake.DeltaTable(dt_loc).to_pyarrow_table())
+            assert_arrow_table_equal(deltalake.DeltaTable(xdl.loc.path), xdlake.DeltaTable(dt_loc).to_pyarrow_table())
 
 
 def gen_merge_table(num_rows):
