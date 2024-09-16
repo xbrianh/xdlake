@@ -23,9 +23,9 @@ class WriteMode(Enum):
     error = "Error"
     ignore = "Ignore"
 
-class Type(Enum):
-    commitInfo = "commitInfo"
-    metaData = "metaData"
+class ActionType(Enum):
+    table_commit = "commitInfo"
+    table_metadata = "metaData"
     protocol = "protocol"
     add = "add"
     remove = "remove"
@@ -64,7 +64,7 @@ class Protocol(_DeltaLogAction):
     minWriterVersion: int = 2
 
     def to_action_dict(self) -> dict:
-        return {Type.protocol.name: self.asdict()}
+        return {ActionType.protocol.name: self.asdict()}
 
 @dataclass
 class TableFormat(_DeltaLogAction):
@@ -177,7 +177,7 @@ class TableMetadata(_DeltaLogAction):
     configuration: dict = field(default_factory=lambda: dict())
 
     def to_action_dict(self) -> dict:
-        return {Type.metaData.name: self.asdict()}
+        return {ActionType.table_metadata.name: self.asdict()}
 
     @property
     def schema(self) -> Schema:
@@ -219,7 +219,7 @@ class TableCommit(_DeltaLogAction):
     def to_action_dict(self) -> dict:
         info = {k: v for k, v in self.asdict().items()
                 if v}
-        return {Type.commitInfo.name: info}
+        return {ActionType.table_commit.name: info}
 
     @property
     def metadata(self):
@@ -340,7 +340,7 @@ class Add(_DeltaLogAction):
     clusteringProvider: str | None = None
 
     def to_action_dict(self) -> dict:
-        return {Type.add.name: self.asdict()}
+        return {ActionType.add.name: self.asdict()}
 
 @dataclass
 class Remove(_DeltaLogAction):
@@ -352,7 +352,7 @@ class Remove(_DeltaLogAction):
     size: int
 
     def to_action_dict(self) -> dict:
-        return {Type.remove.name: self.asdict()}
+        return {ActionType.remove.name: self.asdict()}
 
 class DeltaLogEntry:
     """A single entry in the delta table transaction log.
@@ -393,22 +393,22 @@ class DeltaLogEntry:
             info = json.loads(obj)
         else:
             info = obj
-        action = Type[set(info.keys()).pop()]
+        action = ActionType[set(info.keys()).pop()]
         info = info[action.name]
 
         match action:
-            case Type.commitInfo:
+            case ActionType.table_commit:
                 if info["operation"] in TableCommitOperation.values:
                     return TableCommit.with_info(info)
                 else:
                     raise ValueError(f"Unknown operation '{info['operation']}'")
-            case Type.metaData:
+            case ActionType.table_metadata:
                 return TableMetadata.with_info(info)
-            case Type.protocol:
+            case ActionType.protocol:
                 return Protocol.with_info(info)
-            case Type.add:
+            case ActionType.add:
                 return Add.with_info(info)
-            case Type.remove:
+            case ActionType.remove:
                 return Remove.with_info(info)
             case _:
                 raise ValueError(f"Cannot handle delta log action '{action}'")
