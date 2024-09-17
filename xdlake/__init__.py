@@ -344,11 +344,11 @@ class DeltaTable:
                     partition_values[key] = value
 
             add_actions.append(
-                delta_log.Add(
+                delta_log.Add.new(
                     path=relpath,
                     modificationTime=utils.timestamp(),
                     size=self.loc.fs.size(visited_file.path),
-                    stats=stats.json_go_away(),
+                    stats=stats,
                     partitionValues=partition_values
                 )
             )
@@ -387,11 +387,11 @@ class DeltaTable:
             info = ds.filesystem.get_file_info(fragment.path)
             partition_values = pyarrow.dataset.get_partition_keys(fragment.partition_expression)
             add_actions.append(
-                delta_log.Add(
+                delta_log.Add.new(
                     path=fragment.path,
                     modificationTime=utils.timestamp(),
                     size=info.size,
-                    stats=stats.json_go_away(),
+                    stats=stats,
                     partitionValues=partition_values,
                 )
             )
