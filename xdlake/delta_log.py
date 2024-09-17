@@ -71,14 +71,17 @@ class DeltaLogAction(metaclass=DeltaLogActionMeta):
     def asdict(self):
         return asdict(self)
 
-    def json(self):
+    def json_go_away(self):
         return json.dumps(self.asdict(), cls=_JSONEncoder)
+
+    def json(self):
+        return json.dumps(self.to_action_dict(), cls=_JSONEncoder)
 
     def replace(self, **kwargs):
         return replace(self, **kwargs)
 
     def to_action_dict(self) -> dict:
-        raise NotADirectoryError()
+        raise NotImplementedError()
 
     @classmethod
     def with_info(cls, info: dict):
@@ -254,8 +257,8 @@ class TableCommit(DeltaLogAction):
     @classmethod
     def create(cls, location: str, timestamp: int, metadata: TableMetadata, protocol: Protocol):
         op_parms = {
-            TableOperationParm.METADATA: metadata.json(),
-            TableOperationParm.PROTOCOL: protocol.json(),
+            TableOperationParm.METADATA: metadata.json_go_away(),
+            TableOperationParm.PROTOCOL: protocol.json_go_away(),
             TableOperationParm.LOCATION: location,
             TableOperationParm.MODE: "ErrorIfExists",
         }
@@ -439,7 +442,7 @@ class DeltaLogEntry:
         Args:
             handle (IO): A file handle
         """
-        handle.write("\n".join([json.dumps(a.to_action_dict()) for a in self.actions]))
+        handle.write("\n".join([a.json() for a in self.actions]))
 
     def add_actions(self) -> list[Add]:
         """Get all add actions in the entry."""
@@ -493,7 +496,7 @@ class DeltaLogEntry:
             DeltaLogEntry: A new DeltaLogEntry object
         """
         protocol = Protocol()
-        table_metadata = TableMetadata(schemaString=schema.json(), partitionColumns=partition_by)
+        table_metadata = TableMetadata(schemaString=schema.json_go_away(), partitionColumns=partition_by)
         commit = TableCommit.create(path, utils.timestamp(), table_metadata, protocol)
         return cls.with_actions([protocol, table_metadata, *add_actions, commit])
 
@@ -512,7 +515,7 @@ class DeltaLogEntry:
         commit = TableCommit.write(utils.timestamp(), mode=WriteMode.append.value, partition_by=partition_by)
         actions = add_actions + [commit]
         if schema is not None:
-            table_metadata = TableMetadata(schemaString=schema.json(), partitionColumns=partition_by)
+            table_metadata = TableMetadata(schemaString=schema.json_go_away(), partitionColumns=partition_by)
             actions = [table_metadata] + actions
         return cls.with_actions(actions)
 
@@ -588,7 +591,7 @@ class DeltaLogEntry:
         }
         commit = TableCommit.restore(utils.timestamp(), read_version, restore_version, operation_metrics)
         remove_actions = generate_remove_acctions(add_actions_to_remove)
-        table_metadata = TableMetadata(schemaString=restore_schema.json(), partitionColumns=restore_partition_by)
+        table_metadata = TableMetadata(schemaString=restore_schema.json_go_away(), partitionColumns=restore_partition_by)
         return cls.with_actions([table_metadata, *remove_actions, *add_actions, commit])
 
 class DeltaLog:
