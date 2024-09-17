@@ -24,11 +24,17 @@ class WriteMode(Enum):
     ignore = "Ignore"
 
 class Actions(Enum):
-    commitInfo = "commitInfo"
-    metaData = "metaData"
+    table_commit = "commitInfo"
+    table_metadata = "metaData"
     protocol = "protocol"
     add = "add"
     remove = "remove"
+
+    @classmethod
+    def _missing_(cls, v):
+        for member in cls:
+            if member.name == v or member.value == v:
+                return member
 
 class _JSONEncoder(json.JSONEncoder):
     def default(self, o):
@@ -177,7 +183,7 @@ class TableMetadata(_DeltaLogAction):
     configuration: dict = field(default_factory=lambda: dict())
 
     def to_action_dict(self) -> dict:
-        return {Actions.metaData.name: self.asdict()}
+        return {Actions.table_metadata.value: self.asdict()}
 
     @property
     def schema(self) -> Schema:
@@ -219,7 +225,7 @@ class TableCommit(_DeltaLogAction):
     def to_action_dict(self) -> dict:
         info = {k: v for k, v in self.asdict().items()
                 if v}
-        return {Actions.commitInfo.name: info}
+        return {Actions.table_commit.value: info}
 
     @property
     def metadata(self):
@@ -393,16 +399,16 @@ class DeltaLogEntry:
             info = json.loads(obj)
         else:
             info = obj
-        action = Actions[set(info.keys()).pop()]
-        info = info[action.name]
+        action = Actions(set(info.keys()).pop())
+        info = info[action.value]
 
         match action:
-            case Actions.commitInfo:
+            case Actions.table_commit:
                 if info["operation"] in TableCommitOperation.values:
                     return TableCommit.with_info(info)
                 else:
                     raise ValueError(f"Unknown operation '{info['operation']}'")
-            case Actions.metaData:
+            case Actions.table_metadata:
                 return TableMetadata.with_info(info)
             case Actions.protocol:
                 return Protocol.with_info(info)
