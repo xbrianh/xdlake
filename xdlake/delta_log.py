@@ -69,11 +69,8 @@ class DeltaLogAction(metaclass=DeltaLogActionMeta):
     def asdict(self):
         return asdict(self)
 
-    def json_go_away(self):
-        return json.dumps(self.asdict(), cls=_JSONEncoder)
-
     def json(self):
-        return json.dumps(self.to_action_dict(), cls=_JSONEncoder)
+        return json.dumps(self.asdict(), cls=_JSONEncoder)
 
     def replace(self, **kwargs):
         return replace(self, **kwargs)
@@ -206,7 +203,7 @@ class TableMetadata(DeltaLogAction):
         if schema is not None:
             if "schemaString" in kwargs:
                 raise ValueError("Cannot supply both 'schema' and 'schemaString'")
-            kwargs["schemaString"] = schema.json_go_away()
+            kwargs["schemaString"] = schema.json()
         return cls(**kwargs)
 
     def to_action_dict(self) -> dict:
@@ -263,8 +260,8 @@ class TableCommit(DeltaLogAction):
     @classmethod
     def create(cls, location: str, timestamp: int, metadata: TableMetadata, protocol: Protocol):
         op_parms = {
-            TableOperationParm.METADATA: metadata.json_go_away(),
-            TableOperationParm.PROTOCOL: protocol.json_go_away(),
+            TableOperationParm.METADATA: metadata.json(),
+            TableOperationParm.PROTOCOL: protocol.json(),
             TableOperationParm.LOCATION: location,
             TableOperationParm.MODE: "ErrorIfExists",
         }
@@ -371,7 +368,7 @@ class Add(DeltaLogAction):
 
     @classmethod
     def new(cls, *, stats: Statistics, **kwargs):
-        return cls(stats=stats.json_go_away(), **kwargs)
+        return cls(stats=stats.json(), **kwargs)
 
     def to_action_dict(self) -> dict:
         return {Actions.add.name: self.asdict()}
@@ -452,7 +449,7 @@ class DeltaLogEntry:
         Args:
             handle (IO): A file handle
         """
-        handle.write("\n".join([a.json() for a in self.actions]))
+        handle.write("\n".join([json.dumps(a.to_action_dict(), cls=_JSONEncoder) for a in self.actions]))
 
     def add_actions(self) -> list[Add]:
         """Get all add actions in the entry."""
