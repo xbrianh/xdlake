@@ -46,7 +46,7 @@ class DeltaLogActionMeta(type):
 
     def __new__(cls, name, bases, dct):
         new_cls = type.__new__(cls, name, bases, dct)
-        res = dataclass(new_cls)
+        res = dataclass(new_cls, kw_only=True)
         if hasattr(res, "action_name"):
             cls.registered_actions[res.action_name] = res
         return res

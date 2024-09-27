@@ -42,3 +42,6 @@ version_file = "xdlake/__version__.py"
 [tool.poetry]
 # Other configuration options...
 readme = "README.md"
+
+[tool.mypy]
+disable_error_code = ["misc"]

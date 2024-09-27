@@ -45,13 +45,21 @@ class TestCompatibility(TableGenMixin, unittest.TestCase):
             xdl = xdl.write(at, partition_by=self.partition_by, custom_metadata=custom_metadata)
             deltalake.write_deltalake(dt_loc, at, partition_by=self.partition_by, mode="append", custom_metadata=custom_metadata)
 
-        hist_a = deltalake.DeltaTable(xdl_loc).history()
-        hist_b = xdlake.DeltaTable(dt_loc).history()
+        with self.subTest("direct"):
+            hist_a = deltalake.DeltaTable(dt_loc).history()
+            hist_b = xdlake.DeltaTable(xdl_loc).history()
+            for a, b in zip(hist_a, hist_b):
+                self.assertEqual(a["version"], b["version"])
+                for k in ["foo", "bar"]:
+                    self.assertEqual(a[k], b[k])
 
-        for a, b in zip(hist_a, hist_b):
-            self.assertEqual(a["version"], b["version"])
-            for k in ["foo", "bar"]:
-                self.assertEqual(a[k], b[k])
+        with self.subTest("cross-read"):
+            hist_a = deltalake.DeltaTable(xdl_loc).history()
+            hist_b = xdlake.DeltaTable(dt_loc).history()
+            for a, b in zip(hist_a, hist_b):
+                self.assertEqual(a["version"], b["version"])
+                for k in ["foo", "bar"]:
+                    self.assertEqual(a[k], b[k])
 
     def test_schema_change(self):
         xdl = xdlake.DeltaTable(f"{self.scratch_folder}/{uuid4()}")
