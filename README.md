@@ -40,14 +40,14 @@ df = dt.to_pandas()
 
 #### Writes
 
-Instances of DeltaTable are immutable, so any method that performs a table operation will return a new DeltaTable instance.
+Instances of DeltaTable are immutable: any method that performs a table operation will return a new DeltaTable.
 
 ##### Write in-memory data
 
-Write data from memory. Data can be pyarrow tables, datasets, or record batches, or iterables of those things.
-If you want to write pandas data you need to convert it to an arrow format. Fortunately this is easy and zero copy: `pyarrow.Table.from_pandas(my_pandas_df)`.
+Write data from memory. Data can be pyarrow tables, datasets, record batches, pandas DataFrames, or iterables of those things.
 
 ```
+dt = dt.write(my_cool_pandas_dataframe)
 dt = dt.write(my_cool_arrow_table)
 dt = dt.write(my_cool_arrow_dataset)
 dt = dt.write(my_cool_arrow_record_batches)
@@ -56,9 +56,8 @@ dt = dt.write(pyarrow.Table.from_pandas(df))
 
 ##### Import foreign data
 
-This is the distributed part: import references to foreign data without copying (that's why it's a "reference").
-Locations can be heterogeneous, for instance s3, gs, az, and local. It can even be partitioned differently than the
-DeltaTable itself. Go hog wild!
+Import references to foreign data without copying. Data may be heterogeneously located in s3, gs, azure, and local,
+and cn be partitioned differently than the DeltaTable itself. Go hog wild.
 
 See [Credentials](#Credentials) if you need different creds for different storage locations.
 
