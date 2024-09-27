@@ -42,7 +42,7 @@ class _JSONEncoder(json.JSONEncoder):
 
 @dataclass_transform()
 class DeltaLogActionMeta(type):
-    registered_actions = dict()
+    registered_actions = dict()  # type: ignore
 
     def __new__(cls, name, bases, dct):
         new_cls = type.__new__(cls, name, bases, dct)
@@ -67,7 +67,11 @@ class DeltaLogAction(metaclass=DeltaLogActionMeta):
         return replace(self, **kwargs)
 
     def to_action_dict(self) -> dict:
-        return {self.action_name: self.asdict()}
+        action_name = getattr(self, "action_name", None)
+        if action_name is not None:
+            return {action_name: self.asdict()}
+        else:
+            raise AttributeError("This is not an action")
 
     @classmethod
     def with_info(cls, info: dict):
