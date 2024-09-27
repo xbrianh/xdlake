@@ -348,7 +348,7 @@ class DeltaTable:
                     path=relpath,
                     modificationTime=utils.timestamp(),
                     size=self.loc.fs.size(visited_file.path),
-                    stats=stats.json(),
+                    stats=stats,
                     partitionValues=partition_values
                 )
             )
@@ -391,7 +391,7 @@ class DeltaTable:
                     path=fragment.path,
                     modificationTime=utils.timestamp(),
                     size=info.size,
-                    stats=stats.json(),
+                    stats=stats,
                     partitionValues=partition_values,
                 )
             )
