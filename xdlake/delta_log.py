@@ -7,7 +7,7 @@ from contextlib import nullcontext
 from collections import defaultdict
 from dataclasses import dataclass, asdict, field, fields, replace
 from collections.abc import ValuesView
-from typing import IO, Iterable, Sequence
+from typing import IO, Generator, Iterable, Sequence
 
 try:
     from typing import dataclass_transform
@@ -683,6 +683,14 @@ class DeltaLog:
             return sorted(self.entries.keys())
         else:
             raise ValueError("This delta log is empty!")
+
+    def history(self, reverse: bool=True) -> Generator[dict, None, None]:
+        for version in reversed(self.versions) if reverse else self.versions:
+            for action in self[version].actions:
+                if isinstance(action, TableCommit):
+                    info = action.to_action_dict()["commitInfo"]
+                    info["version"] = version
+                    yield info
 
     @property
     def version_to_write(self) -> int:

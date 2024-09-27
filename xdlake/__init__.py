@@ -3,7 +3,7 @@ import operator
 from uuid import uuid4
 from contextlib import contextmanager
 from collections import defaultdict
-from typing import Iterable
+from typing import Generator, Iterable
 
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -67,6 +67,9 @@ class DeltaTable:
     def versions(self) -> list[int]:
         """Return the versions of the table."""
         return self.dlog.versions
+
+    def history(self, reverse: bool=True) -> Generator[dict, None, None]:
+        yield from self.dlog.history(reverse=reverse)
 
     def load_as_version(self, version: int) -> "DeltaTable":
         """Load the table at a specific version.
