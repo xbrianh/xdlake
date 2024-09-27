@@ -7,6 +7,9 @@ test: lint mypy $(tests)
 $(tests): %.py :
 	python -m unittest $*.py
 
+quick_tests:
+	python -m unittest tests/test_xdlake.py tests/test_compatibility.py tests/test_delta_log.py
+
 lint:
 	ruff check $(MODULES)
 
@@ -25,4 +28,4 @@ sdist: clean
 install: build
 	pip install --upgrade dist/*.whl
 
-.PHONY: $(tests) clean build install
+.PHONY: $(tests) quick_tests clean build install
