@@ -86,7 +86,8 @@ class Protocol(DeltaLogAction):
 
     action_name = "protocol"
 
-class TableFormat(DeltaLogAction):
+@dataclass
+class TableFormat:
     """Represents the file format of the table"""
     provider: str = "parquet"
     options: dict = field(default_factory=lambda: dict())
@@ -128,13 +129,15 @@ DELTA_TO_ARROW_TYPE = {
     "string": pa.string(),
 }
 
-class SchemaField(DeltaLogAction):
+@dataclass
+class SchemaField:
     name: str
     type: str
     nullable: bool
     metadata: dict
 
-class Schema(DeltaLogAction):
+@dataclass
+class Schema:
     fields: list[dict]
     type: str = "struct"
 
@@ -149,7 +152,7 @@ class Schema(DeltaLogAction):
             Schema: A new schema object
         """
         fields = [
-            SchemaField(f.name, _data_type_from_arrow(f.type), f.nullable, f.metadata or {}).asdict()
+            asdict(SchemaField(f.name, _data_type_from_arrow(f.type), f.nullable, f.metadata or {}))
             for f in schema
         ]
         return cls(fields=fields)
@@ -188,7 +191,7 @@ class TableMetadata(DeltaLogAction):
     id: str = field(default_factory=lambda: f"{uuid4()}")
     name: str | None = None
     description: str | None = None
-    format: dict = field(default_factory=lambda: TableFormat().asdict())
+    format: dict = field(default_factory=lambda: asdict(TableFormat()))
     partitionColumns: list[str] = field(default_factory=lambda: list())
     configuration: dict = field(default_factory=lambda: dict())
 
@@ -197,7 +200,7 @@ class TableMetadata(DeltaLogAction):
     def __post_init__(self):
         match self.schemaString:
             case Schema():
-                self.schemaString = self.schemaString.json()
+                self.schemaString = json.dumps(asdict(self.schemaString), cls=_JSONEncoder)
             case str():
                 self.schemaString = self.schemaString
             case _:
@@ -320,7 +323,8 @@ def _data_type_from_arrow(_t):
         raise TypeError(err)
     return ARROW_TO_DELTA_TYPE[_t]
 
-class Statistics(DeltaLogAction):
+@dataclass
+class Statistics:
     numRecords: int
     minValues: dict
     maxValues: dict
@@ -367,7 +371,7 @@ class Add(DeltaLogAction):
 
     def __post_init__(self):
         if isinstance(self.stats, Statistics):
-            self.stats = self.stats.json()
+            self.stats = json.dumps(asdict(self.stats), cls=_JSONEncoder)
 
 class Remove(DeltaLogAction):
     path: str
