@@ -299,13 +299,38 @@ class TestXdLake(BaseXdlakeTest):
     def test_write_pandas(self):
         xdl = xdlake.DeltaTable(f"{self.scratch_folder}/{uuid4()}")
         arrow_tables = [self.gen_table() for _ in range(3)]
-        for at in arrow_tables:
-            xdl = xdl.write(at.to_pandas())
+        xdl = xdl.write([at.to_pandas() for at in arrow_tables])
         assert_arrow_table_equal(
             pa.concat_tables(arrow_tables),
             xdl.to_pyarrow_table()
         )
 
+    def test_write_with_generator(self):
+        arrow_tables = [self.gen_table() for _ in range(3)]
+
+        def gen_tables():
+            for at in arrow_tables:
+                yield at
+
+        def gen_frames():
+            for at in arrow_tables:
+                yield at.to_pandas()
+
+        with self.subTest("generate arrow tables"):
+            xdl = xdlake.DeltaTable(f"{self.scratch_folder}/{uuid4()}")
+            xdl = xdl.write(gen_tables())
+            assert_arrow_table_equal(
+                pa.concat_tables(arrow_tables),
+                xdl.to_pyarrow_table()
+            )
+
+        with self.subTest("generate pandas dataframes"):
+            xdl = xdlake.DeltaTable(f"{self.scratch_folder}/{uuid4()}")
+            xdl = xdl.write(gen_frames())
+            assert_arrow_table_equal(
+                pa.concat_tables(arrow_tables),
+                xdl.to_pyarrow_table()
+            )
 
 if __name__ == '__main__':
     unittest.main()

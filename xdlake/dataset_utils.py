@@ -1,6 +1,7 @@
 from collections import defaultdict
 from functools import lru_cache
-from typing import Sequence, Union
+from collections.abc import Iterable
+from typing import Union
 
 import pyarrow as pa
 
@@ -91,17 +92,20 @@ def locations_to_datasets(schema_to_locations: dict[str, list[storage.Location]]
         datasets.append(ds)
     return datasets
 
-def union_dataset(data: RESOLVABLE | Sequence[RESOLVABLE], schema_mode: str = "common") -> pa.dataset.UnionDataset:
-    """Create a union dataset from data or sequence of data.
+def _is_pandas_dataframe(obj) -> bool:
+    return hasattr(obj, '__dataframe__') and callable(obj.__dataframe__)
+
+def union_dataset(data: RESOLVABLE | Iterable[RESOLVABLE], schema_mode: str = "common") -> pa.dataset.UnionDataset:
+    """Create a union dataset from data or iterable of data.
 
     Args:
-        data (RESOLVABLE | Sequence[RESOLVABLE]): The data.
+        data (RESOLVABLE | Iterable[RESOLVABLE]): The data.
         schema_mode (str, optional): The schema mode. Defaults to "common", which drops data that does not match the schema. Use "merge" to combine schema.
 
     Returns:
         pa.dataset.UnionDataset
     """
-    if not isinstance(data, Sequence):
+    if _is_pandas_dataframe(data) or not isinstance(data, Iterable):
         data = [data]
 
     datasets = list()
@@ -119,11 +123,10 @@ def union_dataset(data: RESOLVABLE | Sequence[RESOLVABLE], schema_mode: str = "c
                 locations[item.scheme].append(item)
             case pa.dataset.Dataset():
                 datasets.append(item)
+            case df if _is_pandas_dataframe(df):
+                fragments.append(pa.Table.from_pandas(df))
             case _:
-                try:
-                    fragments.append(pa.Table.from_pandas(item))
-                except Exception:
-                    raise TypeError(f"Unsupported location type: {item}")
+                raise TypeError(f"Unsupported type: {item}")
 
     if fragments:
         datasets.append(fragments_to_dataset(fragments, schema_mode))
