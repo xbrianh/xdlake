@@ -9,6 +9,15 @@ from dataclasses import dataclass, asdict, field, fields, replace
 from collections.abc import ValuesView
 from typing import IO, Iterable, Sequence
 
+try:
+    from typing import dataclass_transform
+except ImportError:
+    # support py310
+    def dataclass_transform(*args):  # type: ignore
+        def decorator(f):
+            return f
+        return decorator
+
 import pyarrow as pa
 
 from xdlake import storage, utils
@@ -44,7 +53,21 @@ class _JSONEncoder(json.JSONEncoder):
             return repr(o.decode("raw_unicode_escape", "backslashreplace"))
         return super().default(o)
 
-class _DeltaLogAction:
+
+@dataclass_transform()
+class DeltaLogActionMeta(type):
+    def __new__(cls, name, bases, dct):
+        new_cls = type.__new__(cls, name, bases, dct)
+
+        # pull in common dataclass fields - these need to have defaults
+        for k, v in cls.__annotations__.items():
+            setattr(new_cls, k, v)
+
+        res = dataclass(new_cls)
+        return res
+
+
+class DeltaLogAction(metaclass=DeltaLogActionMeta):
     def asdict(self):
         return asdict(self)
 
@@ -59,12 +82,11 @@ class _DeltaLogAction:
 
     @classmethod
     def with_info(cls, info: dict):
-        supported_info = {f.name: info.get(f.name) for f in fields(cls)}  # type: ignore[arg-type]  # it's OK to call fields on _DeltaLogAction subclasses
+        supported_info = {f.name: info.get(f.name) for f in fields(cls)}  # type: ignore[arg-type]  # it's OK to call fields on DeltaLogAction subclasses
         return cls(**supported_info)
 
 
-@dataclass
-class Protocol(_DeltaLogAction):
+class Protocol(DeltaLogAction):
     """Represetns the protocol version of the delta log"""
     minReaderVersion: int = 1
     minWriterVersion: int = 2
@@ -72,8 +94,7 @@ class Protocol(_DeltaLogAction):
     def to_action_dict(self) -> dict:
         return {Actions.protocol.name: self.asdict()}
 
-@dataclass
-class TableFormat(_DeltaLogAction):
+class TableFormat(DeltaLogAction):
     """Represents the file format of the table"""
     provider: str = "parquet"
     options: dict = field(default_factory=lambda: dict())
@@ -115,15 +136,13 @@ DELTA_TO_ARROW_TYPE = {
     "string": pa.string(),
 }
 
-@dataclass
-class SchemaField(_DeltaLogAction):
+class SchemaField(DeltaLogAction):
     name: str
     type: str
     nullable: bool
     metadata: dict
 
-@dataclass
-class Schema(_DeltaLogAction):
+class Schema(DeltaLogAction):
     fields: list[dict]
     type: str = "struct"
 
@@ -171,8 +190,7 @@ class Schema(_DeltaLogAction):
         b_fields = sorted(o.fields, key=lambda x: x["name"])
         return a_fields == b_fields
 
-@dataclass
-class TableMetadata(_DeltaLogAction):
+class TableMetadata(DeltaLogAction):
     schemaString: str
     createdTime: int = field(default_factory=lambda: utils.timestamp())
     id: str = field(default_factory=lambda: f"{uuid4()}")
@@ -207,8 +225,7 @@ class TableCommitOperation:
     OPTIMIZE = "OPTIMIZE"
     values = [CREATE, WRITE, MERGE, DELETE, RESTORE, VACUUM_START, VACUUM_END, OPTIMIZE]
 
-@dataclass
-class TableCommit(_DeltaLogAction):
+class TableCommit(DeltaLogAction):
     timestamp: int
     operationParameters: dict
     operationMetrics: dict | None = field(default_factory=dict)
@@ -300,8 +317,7 @@ def _data_type_from_arrow(_t):
         raise TypeError(err)
     return ARROW_TO_DELTA_TYPE[_t]
 
-@dataclass
-class Statistics(_DeltaLogAction):
+class Statistics(DeltaLogAction):
     numRecords: int
     minValues: dict
     maxValues: dict
@@ -331,8 +347,7 @@ class Statistics(_DeltaLogAction):
                    maxValues=dict(max_values),
                    nullCount=dict(nullcounts))
 
-@dataclass
-class Add(_DeltaLogAction):
+class Add(DeltaLogAction):
     path: str
     partitionValues: dict
     size: int
@@ -348,8 +363,7 @@ class Add(_DeltaLogAction):
     def to_action_dict(self) -> dict:
         return {Actions.add.name: self.asdict()}
 
-@dataclass
-class Remove(_DeltaLogAction):
+class Remove(DeltaLogAction):
     path: str
     dataChange: bool
     deletionTimestamp: int
@@ -383,7 +397,7 @@ class DeltaLogEntry:
         return cls(actions)
 
     @staticmethod
-    def load_action(obj: str | bytes | dict) -> _DeltaLogAction: 
+    def load_action(obj: str | bytes | dict) -> DeltaLogAction:
         """Load an action from a string, bytes, or dict.
 
         Args:
@@ -452,7 +466,7 @@ class DeltaLogEntry:
         return None
 
     @classmethod
-    def with_actions(cls, actions: list[_DeltaLogAction]) -> "DeltaLogEntry":
+    def with_actions(cls, actions: list[DeltaLogAction]) -> "DeltaLogEntry":
         """Create a new DeltaLogEntry with a list of actions.
 
         Args:
