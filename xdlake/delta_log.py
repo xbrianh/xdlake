@@ -32,19 +32,6 @@ class WriteMode(Enum):
     error = "Error"
     ignore = "Ignore"
 
-class Actions(Enum):
-    table_commit = "commitInfo"
-    table_metadata = "metaData"
-    protocol = "protocol"
-    add = "add"
-    remove = "remove"
-
-    @classmethod
-    def _missing_(cls, v):
-        for member in cls:
-            if member.name == v or member.value == v:
-                return member
-
 class _JSONEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, (datetime.date, datetime.datetime)):
@@ -55,6 +42,8 @@ class _JSONEncoder(json.JSONEncoder):
 
 @dataclass_transform()
 class DeltaLogActionMeta(type):
+    registered_actions = dict()  # type: ignore
+
     def __new__(cls, name, bases, dct):
         new_cls = type.__new__(cls, name, bases, dct)
 
@@ -63,6 +52,8 @@ class DeltaLogActionMeta(type):
             setattr(new_cls, k, v)
 
         res = dataclass(new_cls)
+        if hasattr(res, "action_name"):
+            cls.registered_actions[res.action_name] = res
         return res
 
 class DeltaLogAction(metaclass=DeltaLogActionMeta):
@@ -76,7 +67,11 @@ class DeltaLogAction(metaclass=DeltaLogActionMeta):
         return replace(self, **kwargs)
 
     def to_action_dict(self) -> dict:
-        raise NotImplementedError()
+        action_name = getattr(self, "action_name", None)
+        if action_name is not None:
+            return {action_name: self.asdict()}
+        else:
+            raise AttributeError("This is not an action")
 
     @classmethod
     def with_info(cls, info: dict):
@@ -89,10 +84,10 @@ class Protocol(DeltaLogAction):
     minReaderVersion: int = 1
     minWriterVersion: int = 2
 
-    def to_action_dict(self) -> dict:
-        return {Actions.protocol.name: self.asdict()}
+    action_name = "protocol"
 
-class TableFormat(DeltaLogAction):
+@dataclass
+class TableFormat:
     """Represents the file format of the table"""
     provider: str = "parquet"
     options: dict = field(default_factory=lambda: dict())
@@ -134,13 +129,15 @@ DELTA_TO_ARROW_TYPE = {
     "string": pa.string(),
 }
 
-class SchemaField(DeltaLogAction):
+@dataclass
+class SchemaField:
     name: str
     type: str
     nullable: bool
     metadata: dict
 
-class Schema(DeltaLogAction):
+@dataclass
+class Schema:
     fields: list[dict]
     type: str = "struct"
 
@@ -155,7 +152,7 @@ class Schema(DeltaLogAction):
             Schema: A new schema object
         """
         fields = [
-            SchemaField(f.name, _data_type_from_arrow(f.type), f.nullable, f.metadata or {}).asdict()
+            asdict(SchemaField(f.name, _data_type_from_arrow(f.type), f.nullable, f.metadata or {}))
             for f in schema
         ]
         return cls(fields=fields)
@@ -194,21 +191,20 @@ class TableMetadata(DeltaLogAction):
     id: str = field(default_factory=lambda: f"{uuid4()}")
     name: str | None = None
     description: str | None = None
-    format: dict = field(default_factory=lambda: TableFormat().asdict())
+    format: dict = field(default_factory=lambda: asdict(TableFormat()))
     partitionColumns: list[str] = field(default_factory=lambda: list())
     configuration: dict = field(default_factory=lambda: dict())
+
+    action_name = "metaData"
 
     def __post_init__(self):
         match self.schemaString:
             case Schema():
-                self.schemaString = self.schemaString.json()
+                self.schemaString = json.dumps(asdict(self.schemaString), cls=_JSONEncoder)
             case str():
                 self.schemaString = self.schemaString
             case _:
                 raise ValueError(f"Cannot handle schemaString of type {type(self.schemaString)}")
-
-    def to_action_dict(self) -> dict:
-        return {Actions.table_metadata.value: self.asdict()}
 
     @property
     def schema(self) -> Schema:
@@ -248,10 +244,12 @@ class TableCommit(DeltaLogAction):
     engineInfo: str | None = None
     txnId: str | None = None
 
+    action_name = "commitInfo"
+
     def to_action_dict(self) -> dict:
         info = {k: v for k, v in self.asdict().items()
                 if v}
-        return {Actions.table_commit.value: info}
+        return {self.action_name: info}
 
     @property
     def metadata(self):
@@ -325,7 +323,8 @@ def _data_type_from_arrow(_t):
         raise TypeError(err)
     return ARROW_TO_DELTA_TYPE[_t]
 
-class Statistics(DeltaLogAction):
+@dataclass
+class Statistics:
     numRecords: int
     minValues: dict
     maxValues: dict
@@ -368,12 +367,11 @@ class Add(DeltaLogAction):
     defaultRowCommitVersion: int | None = None
     clusteringProvider: str | None = None
 
+    action_name = "add"
+
     def __post_init__(self):
         if isinstance(self.stats, Statistics):
-            self.stats = self.stats.json()
-
-    def to_action_dict(self) -> dict:
-        return {Actions.add.name: self.asdict()}
+            self.stats = json.dumps(asdict(self.stats), cls=_JSONEncoder)
 
 class Remove(DeltaLogAction):
     path: str
@@ -383,8 +381,7 @@ class Remove(DeltaLogAction):
     partitionValues: dict
     size: int
 
-    def to_action_dict(self) -> dict:
-        return {Actions.remove.name: self.asdict()}
+    action_name = "remove"
 
 class DeltaLogEntry:
     """A single entry in the delta table transaction log.
@@ -425,25 +422,13 @@ class DeltaLogEntry:
             info = json.loads(obj)
         else:
             info = obj
-        action = Actions(set(info.keys()).pop())
-        info = info[action.value]
-
-        match action:
-            case Actions.table_commit:
-                if info["operation"] in TableCommitOperation.values:
-                    return TableCommit.with_info(info)
-                else:
-                    raise ValueError(f"Unknown operation '{info['operation']}'")
-            case Actions.table_metadata:
-                return TableMetadata.with_info(info)
-            case Actions.protocol:
-                return Protocol.with_info(info)
-            case Actions.add:
-                return Add.with_info(info)
-            case Actions.remove:
-                return Remove.with_info(info)
-            case _:
-                raise ValueError(f"Cannot handle delta log action '{action}'")
+        action_name = list(info.keys())[0]
+        info = info[action_name]
+        try:
+            action_cls = DeltaLogActionMeta.registered_actions[action_name]
+            return action_cls.with_info(info)
+        except Exception as e:
+            raise ValueError(f"Cannot handle delta log action '{action_name}'") from e
 
     def write(self, handle):
         """Write the entry to a file handle.
