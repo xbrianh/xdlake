@@ -212,6 +212,8 @@ class TableMetadata(DeltaLogAction):
 
     @property
     def schema(self) -> Schema:
+        if not isinstance(self.schemaString, str):
+            raise TypeError("schemaString is not a string")
         return Schema(**json.loads(self.schemaString))
 
 class TableOperationParm:
