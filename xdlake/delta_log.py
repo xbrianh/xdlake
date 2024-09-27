@@ -7,7 +7,16 @@ from contextlib import nullcontext
 from collections import defaultdict
 from dataclasses import dataclass, asdict, field, fields, replace
 from collections.abc import ValuesView
-from typing import IO, Iterable, Sequence, dataclass_transform
+from typing import IO, Iterable, Sequence
+
+try:
+    from typing import dataclass_transform
+except ImportError:
+    # support py310
+    def dataclass_transform(*args):  # type: ignore
+        def decorator(f):
+            return f
+        return decorator
 
 import pyarrow as pa
 
