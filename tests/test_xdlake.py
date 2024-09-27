@@ -282,6 +282,20 @@ class TestXdLake(BaseXdlakeTest):
         xdl.commit(mock.MagicMock())
         mock_obj.assert_called_once_with(expected_path)
 
+    def test_history(self):
+        arrow_tables = [self.gen_table() for _ in range(3)]
+        xdl = xdlake.DeltaTable(f"{self.scratch_folder}/{uuid4()}")
+        for at in arrow_tables:
+            xdl = xdl.write(at)
+        self.assertEqual(
+            [2, 1, 0],
+            [info["version"] for info in xdl.history()],
+        )
+        self.assertEqual(
+            [0, 1, 2],
+            [info["version"] for info in xdl.history(reverse=False)],
+        )
+
 
 if __name__ == '__main__':
     unittest.main()
