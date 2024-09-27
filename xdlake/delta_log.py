@@ -33,17 +33,11 @@ class WriteMode(Enum):
     ignore = "Ignore"
 
 class Actions(Enum):
-    table_commit = "commitInfo"
-    table_metadata = "metaData"
-    protocol = "protocol"
-    add = "add"
-    remove = "remove"
-
-    @classmethod
-    def _missing_(cls, v):
-        for member in cls:
-            if member.name == v or member.value == v:
-                return member
+    TableCommit = "commitInfo"
+    TableMetadata = "metaData"
+    Protocol = "protocol"
+    Add = "add"
+    Remove = "remove"
 
 class _JSONEncoder(json.JSONEncoder):
     def default(self, o):
@@ -76,21 +70,22 @@ class DeltaLogAction(metaclass=DeltaLogActionMeta):
         return replace(self, **kwargs)
 
     def to_action_dict(self) -> dict:
-        raise NotImplementedError()
+        return {Actions[self.action_name].value: self.asdict()}
 
     @classmethod
     def with_info(cls, info: dict):
         supported_info = {f.name: info.get(f.name) for f in fields(cls)}  # type: ignore[arg-type]  # it's OK to call fields on DeltaLogAction subclasses
         return cls(**supported_info)
 
+    @property
+    def action_name(self):
+        return self.__class__.__name__
+
 
 class Protocol(DeltaLogAction):
     """Represetns the protocol version of the delta log"""
     minReaderVersion: int = 1
     minWriterVersion: int = 2
-
-    def to_action_dict(self) -> dict:
-        return {Actions.protocol.name: self.asdict()}
 
 class TableFormat(DeltaLogAction):
     """Represents the file format of the table"""
@@ -207,9 +202,6 @@ class TableMetadata(DeltaLogAction):
             case _:
                 raise ValueError(f"Cannot handle schemaString of type {type(self.schemaString)}")
 
-    def to_action_dict(self) -> dict:
-        return {Actions.table_metadata.value: self.asdict()}
-
     @property
     def schema(self) -> Schema:
         if not isinstance(self.schemaString, str):
@@ -251,7 +243,7 @@ class TableCommit(DeltaLogAction):
     def to_action_dict(self) -> dict:
         info = {k: v for k, v in self.asdict().items()
                 if v}
-        return {Actions.table_commit.value: info}
+        return {Actions[self.action_name].value: info}
 
     @property
     def metadata(self):
@@ -372,9 +364,6 @@ class Add(DeltaLogAction):
         if isinstance(self.stats, Statistics):
             self.stats = self.stats.json()
 
-    def to_action_dict(self) -> dict:
-        return {Actions.add.name: self.asdict()}
-
 class Remove(DeltaLogAction):
     path: str
     dataChange: bool
@@ -382,9 +371,6 @@ class Remove(DeltaLogAction):
     extendedFileMetadata: bool
     partitionValues: dict
     size: int
-
-    def to_action_dict(self) -> dict:
-        return {Actions.remove.name: self.asdict()}
 
 class DeltaLogEntry:
     """A single entry in the delta table transaction log.
@@ -429,18 +415,18 @@ class DeltaLogEntry:
         info = info[action.value]
 
         match action:
-            case Actions.table_commit:
+            case Actions.TableCommit:
                 if info["operation"] in TableCommitOperation.values:
                     return TableCommit.with_info(info)
                 else:
                     raise ValueError(f"Unknown operation '{info['operation']}'")
-            case Actions.table_metadata:
+            case Actions.TableMetadata:
                 return TableMetadata.with_info(info)
-            case Actions.protocol:
+            case Actions.Protocol:
                 return Protocol.with_info(info)
-            case Actions.add:
+            case Actions.Add:
                 return Add.with_info(info)
-            case Actions.remove:
+            case Actions.Remove:
                 return Remove.with_info(info)
             case _:
                 raise ValueError(f"Cannot handle delta log action '{action}'")
