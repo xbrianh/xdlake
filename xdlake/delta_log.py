@@ -362,7 +362,7 @@ class Add(DeltaLogAction):
     size: int
     modificationTime: int
     stats: Statistics | str
-    dataChange: bool | None = None
+    dataChange: bool = False
     tags: list | None = None
     deletionVector: dict | None = None
     baseRowId: str | None = None
