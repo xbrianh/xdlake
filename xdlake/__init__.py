@@ -82,11 +82,11 @@ class DeltaTable:
         """
         return type(self)(self.loc, self.dlog.loc, version=version)
 
-    def add_action_to_fragment(self, add: delta_log.Add) -> tuple[storage.Location, pa.dataset.Fragment]:
+    def add_action_to_fragment(self, add: delta_log.actions.Add) -> tuple[storage.Location, pa.dataset.Fragment]:
         """Convert a delta log add action to a pyarrow dataset fragment.
 
         Args:
-            add (delta_log.Add): Add action.
+            add (delta_log.actions.Add): Add action.
 
         Returns:
             tuple[storage.Location, pa.dataset.Fragment]
@@ -236,9 +236,9 @@ class DeltaTable:
         for version, src_entry in self.dlog.entries.items():
             dst_actions = list()
             for src_action in src_entry.actions:
-                if isinstance(src_action, (delta_log.Add, delta_log.Remove)):
+                if isinstance(src_action, (delta_log.actions.Add, delta_log.actions.Remove)):
                     dst_action = src_action.replace(path=storage.absloc(src_action.path, self.loc).path)
-                elif isinstance(src_action, delta_log.TableCommit):
+                elif isinstance(src_action, delta_log.actions.TableCommit):
                     dst_action = src_action
                 else:
                     dst_action = src_action
@@ -327,7 +327,7 @@ class DeltaTable:
         ds: pa.dataset.Dataset,
         partition_by: list | None = None,
         write_arrow_dataset_options: dict | None = None,
-    ) -> list[delta_log.Add]:
+    ) -> list[delta_log.actions.Add]:
         """Write data and generate add actions for written files.
 
         This is used during table writes. If you want to change write behavior before the log is updated, this is where
@@ -339,13 +339,13 @@ class DeltaTable:
             write_arrow_dataset_options (dict, optional): Options to pass to pyarrow.dataset.write_dataset.
 
         Returns:
-            list[delta_log.Add]
+            list[delta_log.actions.Add]
         """
 
         add_actions = list()
 
         def visitor(visited_file):
-            stats = delta_log.Statistics.from_parquet_file_metadata(
+            stats = delta_log.statistics.Statistics.from_parquet_file_metadata(
                 pa.parquet.ParquetFile(visited_file.path, filesystem=self.loc.fs).metadata
             )
 
@@ -358,7 +358,7 @@ class DeltaTable:
                     partition_values[key] = value
 
             add_actions.append(
-                delta_log.Add(
+                delta_log.actions.Add(
                     path=relpath,
                     modificationTime=utils.timestamp(),
                     size=self.loc.fs.size(visited_file.path),
@@ -385,23 +385,23 @@ class DeltaTable:
 
         return add_actions
 
-    def add_actions_for_foreign_dataset(self, ds: pa.dataset.FileSystemDataset) -> list[delta_log.Add]:
+    def add_actions_for_foreign_dataset(self, ds: pa.dataset.FileSystemDataset) -> list[delta_log.actions.Add]:
         """Generate add actions for a foreign dataset.
 
         Args:
             ds (FileSystemDataset): Foreign dataset.
 
         Returns:
-            list[delta_log.Add]
+            list[delta_log.actions.Add]
         """
         add_actions = list()
         for fragment in ds.get_fragments():
             md = pa.parquet.ParquetFile(fragment.path, filesystem=ds.filesystem).metadata
-            stats = delta_log.Statistics.from_parquet_file_metadata(md)
+            stats = delta_log.statistics.Statistics.from_parquet_file_metadata(md)
             info = ds.filesystem.get_file_info(fragment.path)
             partition_values = pyarrow.dataset.get_partition_keys(fragment.partition_expression)
             add_actions.append(
-                delta_log.Add(
+                delta_log.actions.Add(
                     path=fragment.path,
                     modificationTime=utils.timestamp(),
                     size=info.size,
