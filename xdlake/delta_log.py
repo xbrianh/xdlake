@@ -189,7 +189,7 @@ class Schema(DeltaLogAction):
         return a_fields == b_fields
 
 class TableMetadata(DeltaLogAction):
-    schemaString: str
+    schemaString: Schema | str
     createdTime: int = field(default_factory=lambda: utils.timestamp())
     id: str = field(default_factory=lambda: f"{uuid4()}")
     name: str | None = None
@@ -198,13 +198,14 @@ class TableMetadata(DeltaLogAction):
     partitionColumns: list[str] = field(default_factory=lambda: list())
     configuration: dict = field(default_factory=lambda: dict())
 
-    @classmethod
-    def new(cls, schema: Schema | None=None, **kwargs):
-        if schema is not None:
-            if "schemaString" in kwargs:
-                raise ValueError("Cannot supply both 'schema' and 'schemaString'")
-            kwargs["schemaString"] = schema.json()
-        return cls(**kwargs)
+    def __post_init__(self):
+        match self.schemaString:
+            case Schema():
+                self.schemaString = self.schemaString.json()
+            case str():
+                self.schemaString = self.schemaString
+            case _:
+                raise ValueError(f"Cannot handle schemaString of type {type(self.schemaString)}")
 
     def to_action_dict(self) -> dict:
         return {Actions.table_metadata.value: self.asdict()}
@@ -358,7 +359,7 @@ class Add(DeltaLogAction):
     partitionValues: dict
     size: int
     modificationTime: int
-    stats: str
+    stats: Statistics | str
     dataChange: bool | None = None
     tags: list | None = None
     deletionVector: dict | None = None
@@ -366,9 +367,9 @@ class Add(DeltaLogAction):
     defaultRowCommitVersion: int | None = None
     clusteringProvider: str | None = None
 
-    @classmethod
-    def new(cls, *, stats: Statistics, **kwargs):
-        return cls(stats=stats.json(), **kwargs)
+    def __post_init__(self):
+        if isinstance(self.stats, Statistics):
+            self.stats = self.stats.json()
 
     def to_action_dict(self) -> dict:
         return {Actions.add.name: self.asdict()}
@@ -503,7 +504,7 @@ class DeltaLogEntry:
             DeltaLogEntry: A new DeltaLogEntry object
         """
         protocol = Protocol()
-        table_metadata = TableMetadata.new(schema=schema, partitionColumns=partition_by)
+        table_metadata = TableMetadata(schemaString=schema, partitionColumns=partition_by)
         commit = TableCommit.create(path, utils.timestamp(), table_metadata, protocol)
         return cls.with_actions([protocol, table_metadata, *add_actions, commit])
 
@@ -522,7 +523,7 @@ class DeltaLogEntry:
         commit = TableCommit.write(utils.timestamp(), mode=WriteMode.append.value, partition_by=partition_by)
         actions = add_actions + [commit]
         if schema is not None:
-            table_metadata = TableMetadata.new(schema=schema, partitionColumns=partition_by)
+            table_metadata = TableMetadata(schemaString=schema, partitionColumns=partition_by)
             actions = [table_metadata] + actions
         return cls.with_actions(actions)
 
@@ -598,7 +599,7 @@ class DeltaLogEntry:
         }
         commit = TableCommit.restore(utils.timestamp(), read_version, restore_version, operation_metrics)
         remove_actions = generate_remove_acctions(add_actions_to_remove)
-        table_metadata = TableMetadata.new(schema=restore_schema, partitionColumns=restore_partition_by)
+        table_metadata = TableMetadata(schemaString=restore_schema, partitionColumns=restore_partition_by)
         return cls.with_actions([table_metadata, *remove_actions, *add_actions, commit])
 
 class DeltaLog:
