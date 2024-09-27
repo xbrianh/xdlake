@@ -148,6 +148,7 @@ class DeltaTable:
         schema_mode: str = "overwrite",
         partition_by: list | None = None,
         write_arrow_dataset_options: dict | None = None,
+        custom_metadata: dict | None = None,
         storage_options: dict | None = None,
     ) -> "DeltaTable":
         """Write data to the table.
@@ -176,6 +177,7 @@ class DeltaTable:
         schema = self.dlog.evaluate_schema(ds.schema, mode, schema_mode)
         new_add_actions = self.write_data(ds, partition_by, write_arrow_dataset_options)
         entry = self.dlog.entry_for_write_mode(mode, schema, new_add_actions, partition_by)
+        entry.add_extra_commit_info(custom_metadata)
         return self.commit(entry)
 
     def import_refs(
@@ -184,6 +186,7 @@ class DeltaTable:
         mode: str | delta_log.WriteMode = delta_log.WriteMode.append.name,
         schema_mode: str = "overwrite",
         partition_by: list | None = None,
+        custom_metadata: dict | None = None,
     ) -> "DeltaTable":
         """Import data from a foreign dataset.
 
@@ -213,6 +216,7 @@ class DeltaTable:
         for child_ds in ds.children:
             new_add_actions.extend(self.add_actions_for_foreign_dataset(child_ds))
         entry = self.dlog.entry_for_write_mode(mode, schema, new_add_actions, partition_by)
+        entry.add_extra_commit_info(custom_metadata)
         return self.commit(entry)
 
     def clone(self, dst_loc: str | storage.Location, dst_log_loc: str | None = None) -> "DeltaTable":
@@ -243,7 +247,12 @@ class DeltaTable:
                 delta_log.DeltaLogEntry(dst_actions).write(fh)
         return type(self)(dst_loc, dst_log_loc)
 
-    def delete(self, where: pc.Expression, write_arrow_dataset_options: dict | None = None) -> "DeltaTable":
+    def delete(
+        self,
+        where: pc.Expression,
+        write_arrow_dataset_options: dict | None = None,
+        custom_metadata: dict | None = None,
+    ) -> "DeltaTable":
         """Delete rows from the table.
 
         Args:
@@ -292,9 +301,10 @@ class DeltaTable:
             num_copied_rows=num_copied_rows,
             num_deleted_rows=num_deleted_rows,
         )
+        new_entry.add_extra_commit_info(custom_metadata)
         return self.commit(new_entry)
 
-    def restore(self, restore_version: int) -> "DeltaTable":
+    def restore(self, restore_version: int, custom_metadata: dict | None = None) -> "DeltaTable":
         prev_dlog = self.dlog.load_as_version(restore_version)
         prev_schema = prev_dlog.schema()
         prev_add_actions = prev_dlog.add_actions()
@@ -309,6 +319,7 @@ class DeltaTable:
             add_actions=restore_add_actions,
             add_actions_to_remove=add_actions_to_remove,
         )
+        new_entry.add_extra_commit_info(custom_metadata)
         return self.commit(new_entry)
 
     def write_data(

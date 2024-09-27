@@ -46,17 +46,14 @@ class DeltaLogActionMeta(type):
 
     def __new__(cls, name, bases, dct):
         new_cls = type.__new__(cls, name, bases, dct)
-
-        # pull in common dataclass fields - these need to have defaults
-        for k, v in cls.__annotations__.items():
-            setattr(new_cls, k, v)
-
         res = dataclass(new_cls)
         if hasattr(res, "action_name"):
             cls.registered_actions[res.action_name] = res
         return res
 
 class DeltaLogAction(metaclass=DeltaLogActionMeta):
+    extra_info: dict = field(default_factory=dict)
+
     def asdict(self):
         return asdict(self)
 
@@ -75,8 +72,11 @@ class DeltaLogAction(metaclass=DeltaLogActionMeta):
 
     @classmethod
     def with_info(cls, info: dict):
-        supported_info = {f.name: info.get(f.name) for f in fields(cls)}  # type: ignore[arg-type]  # it's OK to call fields on DeltaLogAction subclasses
-        return cls(**supported_info)
+        supported_info = {f.name: info[f.name] for f in fields(cls)
+                          if f.name in info}  # type: ignore[arg-type]  # it's OK to call fields on _DeltaLogAction subclasses
+        obj = cls(**supported_info)
+        obj.extra_info = {k: v for k, v in info.items() if k not in supported_info}
+        return obj
 
 
 class Protocol(DeltaLogAction):
@@ -233,7 +233,7 @@ class TableCommitOperation:
 class TableCommit(DeltaLogAction):
     timestamp: int
     operationParameters: dict
-    operationMetrics: dict | None = field(default_factory=dict)
+    operationMetrics: dict = field(default_factory=dict)
     operation: str = TableCommitOperation.CREATE
     clientVersion: str = CLIENT_VERSION
     readVersion: int | None = None
@@ -248,7 +248,8 @@ class TableCommit(DeltaLogAction):
 
     def to_action_dict(self) -> dict:
         info = {k: v for k, v in self.asdict().items()
-                if v}
+                if v is not None}
+        info.update(info.pop("extra_info"))
         return {self.action_name: info}
 
     @property
@@ -377,9 +378,9 @@ class Remove(DeltaLogAction):
     path: str
     dataChange: bool
     deletionTimestamp: int
-    extendedFileMetadata: bool
     partitionValues: dict
     size: int
+    extendedFileMetadata: bool = False
 
     action_name = "remove"
 
@@ -587,6 +588,12 @@ class DeltaLogEntry:
         remove_actions = generate_remove_acctions(add_actions_to_remove)
         table_metadata = TableMetadata(schemaString=restore_schema, partitionColumns=restore_partition_by)
         return cls.with_actions([table_metadata, *remove_actions, *add_actions, commit])
+
+    def add_extra_commit_info(self, info: dict | None = None):
+        if info is not None:
+            for a in self.actions:
+                if isinstance(a, TableCommit):
+                    a.extra_info.update(info)
 
 class DeltaLog:
     """The transaction log of a delta table."""
