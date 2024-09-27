@@ -35,6 +35,32 @@ class TestCompatibility(TableGenMixin, unittest.TestCase):
             deltalake.write_deltalake(dt_loc, overwrite_arrow_table, partition_by=self.partition_by, mode="overwrite")
             assert_arrow_table_equal(deltalake.DeltaTable(xdl.loc.path), xdlake.DeltaTable(dt_loc).to_pyarrow_table())
 
+    def test_custom_metadata(self):
+        xdl_loc = f"{self.scratch_folder}/{uuid4()}"
+        dt_loc = f"{self.scratch_folder}/{uuid4()}"
+        xdl = xdlake.DeltaTable(xdl_loc)
+        for _ in range(1):
+            custom_metadata = {"foo": f"{uuid4()}", "bar": f"{uuid4()}"}
+            at = self.gen_table()
+            xdl = xdl.write(at, partition_by=self.partition_by, custom_metadata=custom_metadata)
+            deltalake.write_deltalake(dt_loc, at, partition_by=self.partition_by, mode="append", custom_metadata=custom_metadata)
+
+        with self.subTest("direct"):
+            hist_a = deltalake.DeltaTable(dt_loc).history()
+            hist_b = xdlake.DeltaTable(xdl_loc).history()
+            for a, b in zip(hist_a, hist_b):
+                self.assertEqual(a["version"], b["version"])
+                for k in ["foo", "bar"]:
+                    self.assertEqual(a[k], b[k])
+
+        with self.subTest("cross-read"):
+            hist_a = deltalake.DeltaTable(xdl_loc).history()
+            hist_b = xdlake.DeltaTable(dt_loc).history()
+            for a, b in zip(hist_a, hist_b):
+                self.assertEqual(a["version"], b["version"])
+                for k in ["foo", "bar"]:
+                    self.assertEqual(a[k], b[k])
+
     def test_schema_change(self):
         xdl = xdlake.DeltaTable(f"{self.scratch_folder}/{uuid4()}")
         dt_loc = f"{self.scratch_folder}/{uuid4()}"

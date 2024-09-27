@@ -3,6 +3,7 @@ import unittest
 from uuid import uuid4
 from unittest import mock
 from tempfile import TemporaryDirectory
+from dataclasses import fields
 from contextlib import contextmanager
 
 from xdlake import delta_log, utils
@@ -93,6 +94,10 @@ class TestDeltaLog(unittest.TestCase):
         with mock.patch("xdlake.delta_log.DeltaLog.load_as_version") as mock_load_as_version:
             dlog.load_as_version(0).load_as_version()
             mock_load_as_version.assert_called_once()
+
+    def test_delta_log_action_attrs(self):
+        for _t in delta_log.DeltaLogAction.__subclasses__():
+            self.assertTrue("extra_info" in {f.name for f in fields(_t)})
 
 
 if __name__ == "__main__":
