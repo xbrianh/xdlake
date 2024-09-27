@@ -1,7 +1,7 @@
 import re
 import json
 from enum import Enum
-from contextlib import nullcontext
+from contextlib import nullcontext, suppress
 from collections.abc import ValuesView
 from typing import IO, Generator, Iterable, Sequence
 
@@ -341,7 +341,8 @@ class DeltaLog:
             for add in entry.add_actions():
                 adds[add.path] = add
             for remove in entry.remove_actions():
-                del adds[remove.path]
+                with suppress(KeyError):
+                    del adds[remove.path]
         return adds
 
     def partition_columns(self) -> list:
