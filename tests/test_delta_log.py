@@ -39,7 +39,7 @@ class TestDeltaLog(unittest.TestCase):
         self.assertEqual(s, expected)
 
     def test_replace(self):
-        aa = delta_log.Add(
+        aa = delta_log.actions.Add(
             path="this_is_fake",
             modificationTime=utils.timestamp(),
             size=1,
@@ -96,7 +96,7 @@ class TestDeltaLog(unittest.TestCase):
             mock_load_as_version.assert_called_once()
 
     def test_delta_log_action_attrs(self):
-        for _t in delta_log.DeltaLogAction.__subclasses__():
+        for _t in delta_log.actions.DeltaLogAction.__subclasses__():
             self.assertTrue("extra_info" in {f.name for f in fields(_t)})
 
 
