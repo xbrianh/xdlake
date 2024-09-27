@@ -154,7 +154,7 @@ class DeltaTable:
         """Write data to the table.
 
         Args:
-            data (Table | Dataset | RecordBatch): Data to write.
+            data (Table | Dataset | RecordBatch | pandas.DataFrame): Data to write.
             mode (str | WriteMode, optional): Write mode. Must be one of "append", "overwrite", "error", or "ignore".
             schema_mode (str, optional): Schema mode.
             partition_by (list[str], optional): Partition columns.

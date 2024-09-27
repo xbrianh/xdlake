@@ -296,6 +296,16 @@ class TestXdLake(BaseXdlakeTest):
             [info["version"] for info in xdl.history(reverse=False)],
         )
 
+    def test_write_pandas(self):
+        xdl = xdlake.DeltaTable(f"{self.scratch_folder}/{uuid4()}")
+        arrow_tables = [self.gen_table() for _ in range(3)]
+        for at in arrow_tables:
+            xdl = xdl.write(at.to_pandas())
+        assert_arrow_table_equal(
+            pa.concat_tables(arrow_tables),
+            xdl.to_pyarrow_table()
+        )
+
 
 if __name__ == '__main__':
     unittest.main()
