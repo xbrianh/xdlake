@@ -58,7 +58,6 @@ class DeltaTable:
         else:
             self._version_to_write = 0
 
-    @property
     def version(self) -> int:
         """Return the version of the table."""
         return self.dlog.version
@@ -297,7 +296,7 @@ class DeltaTable:
             predicate="pyarrow expression",
             add_actions_to_remove=adds_to_remove.values(),
             add_actions=new_add_actions,
-            read_version=self.version,
+            read_version=self.version(),
             num_copied_rows=num_copied_rows,
             num_deleted_rows=num_deleted_rows,
         )
@@ -312,7 +311,7 @@ class DeltaTable:
         restore_add_actions = [prev_add_actions[p] for p in prev_add_actions if p not in curr_add_actions]
         add_actions_to_remove = [curr_add_actions[p] for p in curr_add_actions if p not in prev_add_actions]
         new_entry = delta_log.DeltaLogEntry.restore_table(
-            read_version=self.version,
+            read_version=self.version(),
             restore_version=restore_version,
             restore_schema=prev_schema,
             restore_partition_by=prev_dlog.partition_columns(),
