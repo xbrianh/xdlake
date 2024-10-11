@@ -14,8 +14,8 @@ from azure.identity import DefaultAzureCredential
 import xdlake
 
 
-def random_datetimes(N):
-    seed = datetime.datetime.now(tz=pytz.UTC)
+def random_datetimes(N, tz=pytz.UTC):
+    seed = datetime.datetime.now(tz=tz)
     return [seed + datetime.timedelta(days=random.randint(0, 10000)) for _ in range(N)]
 
 deltatable_types = {
@@ -32,6 +32,7 @@ deltatable_types = {
         # pa.uint64.__name__:(pa.uint64, lambda N: np.random.randint(0, 2 ** 63, size=N).astype(np.uint64)),
 
         pa.date32.__name__: (pa.date32, lambda N: random_datetimes(N)),
+        "timestamp_no_tz": (pa.timestamp, lambda N: random_datetimes(N, tz=None)),
         pa.timestamp.__name__: (pa.timestamp, lambda N: random_datetimes(N)),
 
         # pa.date64.__name__:(pa.date64, lambda N: np.datetime64("1805-01-01") + np.random.randint(0, 100, size=N)),
@@ -66,11 +67,12 @@ class TableGen:
         for c in self.columns:
             if c in deltatable_types:
                 arrow_type, gen = deltatable_types[c]
+                values = gen(11)
                 if arrow_type == pa.timestamp:
-                    at = pa.timestamp("us", tz="utc")
+                    at = pa.timestamp("us", tz=values[0].tzinfo)
                 else:
                     at = arrow_type()
-                data.append(pa.array(gen(11), type=at))
+                data.append(pa.array(values, type=at))
             else:
                 data.append(pa.array(np.random.random(11), type=pa.float64()))
         t = pa.Table.from_arrays(data, names=self.columns)

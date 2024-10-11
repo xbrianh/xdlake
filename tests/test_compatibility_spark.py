@@ -15,6 +15,11 @@ class TestCompatibilitySpark(TableGenMixin, unittest.TestCase):
         self.partition_by = list(self.table_gen.categoricals.keys())
         self.spark = self.create_spark_session()
 
+    def gen_table(self, *args, **kwargs):
+        t = super().gen_table(*args, **kwargs)
+        # Spark doesn't support timezone-unaware timestamps
+        return t.drop("timestamp_no_tz")
+
     @lru_cache
     def create_spark_session(self):
         import pyspark.sql
