@@ -5,7 +5,10 @@ import pyarrow as pa
 
 def _data_type_from_arrow(_t):
     if isinstance(_t, pa.lib.TimestampType):
-        return "timestamp"
+        if getattr(_t, "tz", None) is None:
+            return "timestamp_ntz"
+        else:
+            return "timestamp"
     elif _t not in ARROW_TO_DELTA_TYPE:
         err = f"Cannot handle arrow type '{_t}', type={type(_t)}"
         raise TypeError(err)
@@ -42,6 +45,7 @@ DELTA_TO_ARROW_TYPE = {
     "long": pa.int64(),
     "date": pa.date64(),
     "timestamp": pa.timestamp("us", tz="utc"),
+    "timestamp_ntz": pa.timestamp("us"),
     "float": pa.float64(),
     "double": pa.float64(),
     "binary": pa.binary(),
