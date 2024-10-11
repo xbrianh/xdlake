@@ -119,6 +119,11 @@ class DeltaTable:
             fragments[loc.fs].append(fragment)
         return dict(fragments)
 
+    def file_uris(self) -> list[str]:
+        """Return the URI for each file in the current version of the table."""
+        return [storage.absloc(add.path, self.loc).url
+                for add in self.adds.values()]
+
     def to_pyarrow_dataset(self) -> pyarrow.dataset.Dataset:
         """Return arrow dataset."""
         datasets = list()

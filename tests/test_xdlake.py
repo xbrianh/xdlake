@@ -332,5 +332,14 @@ class TestXdLake(BaseXdlakeTest):
                 xdl.to_pyarrow_table()
             )
 
+    def test_file_uris(self):
+        number_of_writes = 3
+        xdl = xdlake.DeltaTable(f"{self.scratch_folder}/{uuid4()}")
+        for _ in range(number_of_writes):
+            xdl = xdl.write(self.gen_table())
+        self.assertEqual(number_of_writes, len(xdl.file_uris()))
+        for uri in xdl.file_uris():
+            self.assertTrue(uri.startswith("file://"))
+
 if __name__ == '__main__':
     unittest.main()
