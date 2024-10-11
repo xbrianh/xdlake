@@ -41,7 +41,7 @@ class TestXdLake(BaseXdlakeTest):
         with self.subTest(mode="overwrite"):
             t = self.gen_table()
             xdl = xdl.write(t, partition_by=self.partition_by, mode="overwrite")
-            versions.append(xdl.version)
+            versions.append(xdl.version())
             self.assertNotIn(None, versions)
             assert_arrow_table_equal(t, xdl.to_pyarrow_table())
             self._test_clone(xdl)
@@ -65,7 +65,7 @@ class TestXdLake(BaseXdlakeTest):
         self._test_restore(xdl)
         return
         xdl = xdl.restore(2)
-        self.assertEqual(5, xdl.version)
+        self.assertEqual(5, xdl.version())
         assert_arrow_table_equal(
             xdl.to_pyarrow_table(),
             xdl.load_as_version(2).to_pyarrow_table(),

@@ -51,10 +51,10 @@ class BaseXdlakeTest(TableGenMixin, unittest.TestCase):
         return deleted
 
     def _test_restore(self, xdl: xdlake.DeltaTable, restore_version: int | None = None):
-        curr_version = xdl.version
+        curr_version = xdl.version()
         restore_version = restore_version or random.choice(xdl.versions)
         restored = xdl.restore(restore_version)
-        self.assertEqual(restored.version, 1 + curr_version)
+        self.assertEqual(restored.version(), 1 + curr_version)
         assert_arrow_table_equal(
             restored.to_pyarrow_table(),
             restored.load_as_version(restore_version).to_pyarrow_table(),
