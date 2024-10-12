@@ -28,6 +28,10 @@ class TestXdLakeCloud(BaseXdlakeTest):
                 self._test_clone(xdl)
                 self._test_delete(xdl)
 
+    def _test_file_uris(self, xdl: xdlake.DeltaTable):
+        for url in xdl.file_uris():
+            xdl.loc.fs.head(url, size=1)
+
     def test_s3(self):
         partition_by = self.partition_by[:1]
         arrow_tables = [self.gen_table() for _ in range(3)]
@@ -37,6 +41,7 @@ class TestXdLakeCloud(BaseXdlakeTest):
         assert_arrow_table_equal(pa.concat_tables(arrow_tables), xdl.to_pyarrow_table())
         self._test_clone(xdl)
         self._test_delete(xdl)
+        self._test_file_uris(xdl)
 
     def test_gs(self):
         partition_by = self.partition_by[:1]
@@ -47,6 +52,7 @@ class TestXdLakeCloud(BaseXdlakeTest):
         assert_arrow_table_equal(pa.concat_tables(arrow_tables), xdl.to_pyarrow_table())
         self._test_clone(xdl)
         self._test_delete(xdl)
+        self._test_file_uris(xdl)
 
     def test_azure_storage(self):
         partition_by = self.partition_by[:1]
@@ -63,6 +69,7 @@ class TestXdLakeCloud(BaseXdlakeTest):
         xdlake.storage.register_default_filesystem_for_protocol("az", storage_options=storage_options)
         self._test_clone(xdl)
         self._test_delete(xdl)
+        self._test_file_uris(xdl)
 
     def test_import_refs(self):
         paths = [os.path.join(f"{self.scratch_folder}", f"{uuid4()}", f"{uuid4()}.parquet") for _ in range(2)]
