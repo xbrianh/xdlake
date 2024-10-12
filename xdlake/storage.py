@@ -221,6 +221,7 @@ def absloc(path: str, root: Location) -> Location:
     """Return path as an absolute Location.
 
     If path is absolute, return Location with path. Otherwise, return Location with path appended onto root.
+    The filesystem is inherited from root.
 
     Args:
         path (str): The path.
@@ -231,6 +232,6 @@ def absloc(path: str, root: Location) -> Location:
     """
     is_absolute = "://" in path
     if is_absolute:
-        return Location.with_location(path)
+        return Location.with_location(path, root.storage_options)
     else:
         return root.append_path(path)
