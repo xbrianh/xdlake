@@ -135,7 +135,12 @@ class DeltaTable:
                 dataset_utils.get_py_filesystem(fs),
             )
             datasets.append(ds)
-        return pa.dataset.dataset(datasets)
+        if 1 == len(datasets):
+            return datasets[0]
+        elif not datasets:
+            return pyarrow.dataset.dataset(list(), schema=self.dlog.schema().to_pyarrow_schema())
+        else:
+            return pa.dataset.dataset(datasets)
 
     def to_pyarrow_table(self) -> pa.Table:
         """Return arrow table."""
