@@ -83,6 +83,7 @@ class TestStorage(unittest.TestCase):
         self.assertEqual(loc.storage_options, expected_storage_options)
         self.assertEqual(loc.append_path("alskdf").storage_options, expected_storage_options)
         self.assertEqual(storage.absloc("ljlj", loc).storage_options, expected_storage_options)
+        self.assertEqual(storage.absloc("foo://asdlfljlj", loc).storage_options, expected_storage_options)
 
     def test_mkdir(self):
         path = f"{self.scratch_folder}/{uuid4()}"
