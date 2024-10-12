@@ -258,19 +258,20 @@ class DeltaTable:
 
     def delete(
         self,
-        where: pc.Expression,
+        where: pc.Expression | None = None,
         write_arrow_dataset_options: dict | None = None,
         custom_metadata: dict | None = None,
     ) -> "DeltaTable":
         """Delete rows from the table.
 
         Args:
-            where (Expression): PyArrow expression.
+            where (Expression, optional): PyArrow expression.
             write_arrow_dataset_options (dict, optional): Options to pass to pyarrow.dataset.write_dataset.
 
         Returns:
             DeltaTable: A new DeltaTable instance.
         """
+        where  = where if where is not None else pc.scalar(True)
         ds = self.to_pyarrow_dataset()
         batches_to_write = list()
         existing_add_actions = {
