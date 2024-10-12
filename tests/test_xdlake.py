@@ -339,7 +339,7 @@ class TestXdLake(BaseXdlakeTest):
             xdl = xdl.write(self.gen_table())
         self.assertEqual(number_of_writes, len(xdl.file_uris()))
         for uri in xdl.file_uris():
-            self.assertTrue(uri.startswith("file://"))
+            xdl.loc.fs.head(uri, size=1)
 
 if __name__ == '__main__':
     unittest.main()

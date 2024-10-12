@@ -90,8 +90,14 @@ class Location:
     def __init__(self, scheme: str, path: str, storage_options: dict | None = None):
         self.scheme = scheme
         self.path = path
-        self.url = f"{self.scheme}://{self.path}"
         self.storage_options = storage_options
+
+    @property
+    def url(self):
+        if self.path.startswith(self.scheme):
+            return self.path
+        else:
+            return f"{self.scheme}://{self.path}"
 
     @classmethod
     def with_location(cls, loc: str | Any, storage_options: dict | None = None) -> "Location":
