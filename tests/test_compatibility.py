@@ -17,7 +17,7 @@ class TestCompatibility(TableGenMixin, unittest.TestCase):
         super().setUp()
         self.partition_by = list(self.table_gen.categoricals.keys())
 
-    def test_append_and_overwrite(self):
+    def test_append_and_overwrite_delete(self):
         xdl = xdlake.DeltaTable(f"{self.scratch_folder}/{uuid4()}")
         dt_loc = f"{self.scratch_folder}/{uuid4()}"
         arrow_tables = [self.gen_table() for _ in range(3)]
@@ -33,6 +33,11 @@ class TestCompatibility(TableGenMixin, unittest.TestCase):
         with self.subTest("should aggree", mode="overwrite"):
             xdl = xdl.write(overwrite_arrow_table, partition_by=self.partition_by, mode="overwrite")
             deltalake.write_deltalake(dt_loc, overwrite_arrow_table, partition_by=self.partition_by, mode="overwrite")
+            assert_arrow_table_equal(deltalake.DeltaTable(xdl.loc.path), xdlake.DeltaTable(dt_loc).to_pyarrow_table())
+
+        with self.subTest("delete with no args should delete the entire table"):
+            xdl = xdl.delete()
+            deltalake.DeltaTable(dt_loc).delete()
             assert_arrow_table_equal(deltalake.DeltaTable(xdl.loc.path), xdlake.DeltaTable(dt_loc).to_pyarrow_table())
 
     def test_custom_metadata(self):

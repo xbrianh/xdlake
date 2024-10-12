@@ -238,6 +238,7 @@ class TestXdLake(BaseXdlakeTest):
         xdl = self._test_delete(xdl)
         xdl = self._test_clone(xdl)
         xdl = self._test_restore(xdl)
+        self.assertEqual(0, xdl.delete().to_pyarrow_dataset().count_rows())
 
     def test_from_pandas(self):
         """A common usage pattern is to derive arrow tables from pandas frames. This surprisingly caused a failure due
